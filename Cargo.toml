@@ -1,0 +1,6 @@
+[workspace]
+resolver = "3"
+members = ["cocos", "libcocos"]
+
+[profile.release]
+debug = true
