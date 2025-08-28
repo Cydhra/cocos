@@ -1,5 +1,5 @@
 use crate::vectors::dot_prod;
-use crate::{BootstrapVec, BootstrapWeights, SiteLikelihoodTable, SiteLikelihoods};
+use crate::{ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods};
 use rand::Rng;
 use rand::distr::Uniform;
 
@@ -19,14 +19,14 @@ pub fn generate_selection_vector<R: Rng>(
     rng: &mut R,
     num_sites: usize,
     replication_factor: f64,
-) -> BootstrapVec {
+) -> ResamplingWeights {
     assert!(num_sites > 0, "cannot bootstrap an alignment of size 0");
     assert!(
         replication_factor > 0.0,
         "replication_factor cannot be negative or zero"
     );
 
-    let mut selection_vector = vec![0.0; num_sites];
+    let mut selection_vector = vec![0.0; num_sites].into_boxed_slice();
     let distribution = Uniform::new(0, num_sites).unwrap();
 
     rng.sample_iter(distribution)
@@ -49,7 +49,7 @@ pub fn generate_selection_vector<R: Rng>(
 /// [`generate_selection_vector`]: generate_selection_vector
 pub fn compute_replicate_likelihood(
     site_lh: &SiteLikelihoods,
-    selection: &BootstrapWeights,
+    selection: &ResamplingWeights,
 ) -> f64 {
     debug_assert!(
         site_lh.len() == selection.len(),
@@ -78,7 +78,7 @@ fn bootstrap_slice<R: Rng>(
     num_replicates: usize,
     num_sites: usize,
     replication_factor: f64,
-) -> Vec<BootstrapVec> {
+) -> Vec<ResamplingWeights> {
     let mut results = Vec::with_capacity(num_replicates);
 
     for _ in 0..num_replicates {
@@ -118,7 +118,7 @@ pub fn bootstrap<R: Rng>(
     likelihoods: &SiteLikelihoodTable,
     num_replicates: usize,
     replication_factor: f64,
-) -> Vec<BootstrapVec> {
+) -> Vec<ResamplingWeights> {
     assert!(num_replicates > 0, "cannot bootstrap with 0 replicates");
     assert!(
         replication_factor > 0.0,
@@ -143,7 +143,7 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
     likelihoods: &SiteLikelihoodTable,
     num_replicates: usize,
     replication_factor: f64,
-) -> Vec<BootstrapVec> {
+) -> Vec<ResamplingWeights> {
     use rayon::current_num_threads;
     use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
     use rayon::slice::ParallelSlice;
@@ -174,7 +174,7 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
         })
         .collect::<Vec<_>>();
 
-    let mut results = vec![vec![0f64; likelihoods.num_trees()]; num_replicates];
+    let mut results = vec![vec![0f64; likelihoods.num_trees()].into_boxed_slice(); num_replicates];
 
     // concatenate the trees from each chunk to make all replicates complete. This time we can
     // divide work between threads by splitting across replicates
@@ -203,7 +203,7 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
 /// # Return
 /// A vector indicating for each tree how often it is the maximum likelihood within the bootstrap
 /// replicates
-pub fn count_max_replicates(bootstrap_replicates: &[BootstrapVec]) -> Vec<u32> {
+pub fn count_max_replicates(bootstrap_replicates: &[ResamplingWeights]) -> Vec<u32> {
     let num_replicates = bootstrap_replicates[0].len();
     assert!(num_replicates > 0, "cannot calculate BP with 0 replicates");
 
@@ -220,7 +220,7 @@ pub fn count_max_replicates(bootstrap_replicates: &[BootstrapVec]) -> Vec<u32> {
 /// # Parameters
 /// - `bootstrap_replicates` all bootstrap replicates for each tree.
 /// - `bp_vector` a vector containing an entry for each tree in the replicates
-pub fn add_max_replicates(bootstrap_replicates: &[BootstrapVec], bp_vector: &mut [u32]) {
+pub fn add_max_replicates(bootstrap_replicates: &[ResamplingWeights], bp_vector: &mut [u32]) {
     assert!(
         !bootstrap_replicates.is_empty(),
         "cannot bootstrap without site likelihoods"
@@ -245,7 +245,7 @@ pub fn add_max_replicates(bootstrap_replicates: &[BootstrapVec], bp_vector: &mut
 }
 
 /// Calculate the bootstrap proportion of each tree for one or multiple bootstrap tables.
-pub fn calc_bootstrap_proportion<'a, I: IntoIterator<Item = &'a [BootstrapVec]>>(
+pub fn calc_bootstrap_proportion<'a, I: IntoIterator<Item = &'a [ResamplingWeights]>>(
     bootstraps: I,
 ) -> Vec<f64> {
     let mut iter = bootstraps.into_iter();

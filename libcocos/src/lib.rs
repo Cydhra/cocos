@@ -58,8 +58,10 @@ impl IndexMut<usize> for SiteLikelihoodTable {
     }
 }
 
+/// A slice of per-site likelihoods of one tree
 pub type SiteLikelihoods = [f64];
 
-pub type BootstrapVec = Vec<f64>;
-
-pub type BootstrapWeights = [f64];
+/// A slice with the same length as tree site-likelihood vectors, containing integer resampling
+/// weights drawn uniformly at random (with replacement). The weights sum to the bootstrap sequence
+/// length.
+pub type ResamplingWeights = Box<[f64]>;
