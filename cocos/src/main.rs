@@ -1,7 +1,5 @@
 use clap::*;
-use libcocos::bootstrap::{
-    DEFAULT_FACTORS, bootstrap, calc_bootstrap_proportion, count_max_replicates, par_bootstrap,
-};
+use libcocos::bootstrap::{DEFAULT_FACTORS, bootstrap, calc_bootstrap_proportion, par_bootstrap};
 use rand::{RngCore, SeedableRng, rng};
 use rand_chacha::ChaCha8Rng;
 use rayon::{ThreadPoolBuilder, current_num_threads};
@@ -176,9 +174,12 @@ fn main() {
         let replicates = bootstrap(&mut rng, &likelihoods, 10000, 1.0);
         calc_bootstrap_proportion(vec![replicates.as_ref()])
     } else {
-        let bootstraps: Vec<_> = DEFAULT_FACTORS.iter().map(|&replication_factor| {
-            par_bootstrap(&mut rng, &likelihoods, 10000, replication_factor)
-        }).collect();
+        let bootstraps: Vec<_> = DEFAULT_FACTORS
+            .iter()
+            .map(|&replication_factor| {
+                par_bootstrap(&mut rng, &likelihoods, 10000, replication_factor)
+            })
+            .collect();
         calc_bootstrap_proportion(bootstraps.iter().map(|x| x.as_ref()))
     };
 

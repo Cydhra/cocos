@@ -1,8 +1,7 @@
 use crate::vectors::dot_prod;
-use crate::{BootstrapVec, BootstrapWeights, SiteLikelihoods};
+use crate::{BootstrapVec, BootstrapWeights, SiteLikelihoodTable, SiteLikelihoods};
 use rand::Rng;
 use rand::distr::Uniform;
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator};
 
 pub const DEFAULT_FACTORS: [f64; 10] = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4];
 
@@ -64,37 +63,22 @@ pub fn compute_replicate_likelihood(
 ///
 /// # Parameters
 /// - `rng` random number generator state
-/// - `likelihoods` a matrix of site log-likelihoods for each phylogenetic tree. All entries in the slice
-///   need the same length of site log-likelihoods.
+/// - `likelihoods` a slice of [SiteLikelihoods] vectors
 /// - `num_replicates` how many replicates to generate
+/// - `num_sites` how many entries the likelihood vectors have
 /// - `replication_factor` the ratio between the original alignment length and the length of bootstrap sequences
 ///
 /// # Return
 /// Returns a vector containing vectors of likelihoods for each bootstrap replicate (i.e., for each
 /// tree).
-///
-/// # Panic
-/// Panics if `num_replicates` is 0, the `likelihoods` tableau is empty, `replication_factor` is negative or zero,
-/// or the likelihood vectors are empty or not the same length.
-pub fn bootstrap<R: Rng + Clone>(
+#[inline]
+fn bootstrap_slice<R: Rng>(
     rng: &mut R,
-    likelihoods: &[Box<SiteLikelihoods>],
+    likelihoods: &[&SiteLikelihoods],
     num_replicates: usize,
+    num_sites: usize,
     replication_factor: f64,
 ) -> Vec<BootstrapVec> {
-    assert!(num_replicates > 0, "cannot bootstrap with 0 replicates");
-    assert!(
-        !likelihoods.is_empty(),
-        "cannot bootstrap without site likelihoods"
-    );
-    assert!(
-        replication_factor > 0.0,
-        "replication_factor cannot be negative or zero"
-    );
-
-    let num_sites = likelihoods[0].len();
-    assert!(num_sites > 0, "cannot bootstrap with 0 site likelihoods");
-
     let mut results = Vec::with_capacity(num_replicates);
 
     for _ in 0..num_replicates {
@@ -113,42 +97,87 @@ pub fn bootstrap<R: Rng + Clone>(
     results
 }
 
-#[cfg(feature = "rayon")]
-pub fn par_bootstrap<R: Rng + Clone + Send>(
+/// Generate `num_replicates` bootstrap replicates for each log-likelihood sequence and calculate
+/// their log-likelihood value.
+///
+/// # Parameters
+/// - `rng` random number generator state
+/// - `likelihoods` a matrix of site log-likelihoods for each phylogenetic tree.
+/// - `num_replicates` how many replicates to generate
+/// - `replication_factor` the ratio between the original alignment length and the length of bootstrap sequences
+///
+/// # Return
+/// Returns a vector containing vectors of likelihoods for each bootstrap replicate (i.e., for each
+/// tree).
+///
+/// # Panic
+/// Panics if `num_replicates` is 0, or the `replication_factor` is negative or zero, or the
+/// trees have zero site likelihoods.
+pub fn bootstrap<R: Rng>(
     rng: &mut R,
-    likelihoods: &[Box<SiteLikelihoods>],
+    likelihoods: &SiteLikelihoodTable,
     num_replicates: usize,
     replication_factor: f64,
 ) -> Vec<BootstrapVec> {
-    use rayon::current_num_threads;
-    use rayon::iter::ParallelIterator;
-    use rayon::slice::ParallelSlice;
-
     assert!(num_replicates > 0, "cannot bootstrap with 0 replicates");
-    assert!(
-        !likelihoods.is_empty(),
-        "cannot bootstrap without site likelihoods"
-    );
     assert!(
         replication_factor > 0.0,
         "replication_factor cannot be negative or zero"
     );
 
-    let num_sites = likelihoods[0].len();
+    let num_sites = likelihoods.num_sites();
     assert!(num_sites > 0, "cannot bootstrap with 0 site likelihoods");
 
-    let regular_chunk_len = likelihoods.len().div_ceil(current_num_threads());
-    let chunked_iter = likelihoods.par_chunks(regular_chunk_len).enumerate();
+    bootstrap_slice(
+        rng,
+        &likelihoods.trees(),
+        num_replicates,
+        num_sites,
+        replication_factor,
+    )
+}
 
+#[cfg(feature = "rayon")]
+pub fn par_bootstrap<R: Rng + Clone + Send>(
+    rng: &mut R,
+    likelihoods: &SiteLikelihoodTable,
+    num_replicates: usize,
+    replication_factor: f64,
+) -> Vec<BootstrapVec> {
+    use rayon::current_num_threads;
+    use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
+    use rayon::slice::ParallelSlice;
+
+    assert!(num_replicates > 0, "cannot bootstrap with 0 replicates");
+    assert!(
+        replication_factor > 0.0,
+        "replication_factor cannot be negative or zero"
+    );
+
+    let num_sites = likelihoods.num_sites();
+    assert!(num_sites > 0, "cannot bootstrap with 0 site likelihoods");
+
+    let regular_chunk_len = likelihoods.num_trees().div_ceil(current_num_threads());
+    let trees = likelihoods.trees();
+    let chunked_iter = trees.par_chunks(regular_chunk_len).enumerate();
+
+    // divide the trees into chunks and let threads compute replicates for a subset of trees in parallel.
+    // this has the advantage that the threads can generate equal resamplings from cloned RNGs,
+    // instead of sharing resampling vectors between threads.
+    // It has the disadvantage that we split work across each replicate and thus concatenation of
+    // the final chunks is less efficient.
     let partial_replicates = chunked_iter
         .map_with(rng.clone(), |rng, (chunk_index, chunk)| {
-            let partial_replicates = bootstrap(rng, chunk, num_replicates, replication_factor);
+            let partial_replicates =
+                bootstrap_slice(rng, chunk, num_replicates, num_sites, replication_factor);
             (chunk_index, partial_replicates)
         })
         .collect::<Vec<_>>();
 
-    let mut results = vec![vec![0f64; likelihoods.len()]; num_replicates];
+    let mut results = vec![vec![0f64; likelihoods.num_trees()]; num_replicates];
 
+    // concatenate the trees from each chunk to make all replicates complete. This time we can
+    // divide work between threads by splitting across replicates
     results
         .par_iter_mut()
         .enumerate()
@@ -216,7 +245,9 @@ pub fn add_max_replicates(bootstrap_replicates: &[BootstrapVec], bp_vector: &mut
 }
 
 /// Calculate the bootstrap proportion of each tree for one or multiple bootstrap tables.
-pub fn calc_bootstrap_proportion<'a, I: IntoIterator<Item = &'a [BootstrapVec]>>(bootstraps: I) -> Vec<f64> {
+pub fn calc_bootstrap_proportion<'a, I: IntoIterator<Item = &'a [BootstrapVec]>>(
+    bootstraps: I,
+) -> Vec<f64> {
     let mut iter = bootstraps.into_iter();
     let mut replicates = 0;
     let mut bp_vector = if let Some(first) = iter.next() {
@@ -231,5 +262,8 @@ pub fn calc_bootstrap_proportion<'a, I: IntoIterator<Item = &'a [BootstrapVec]>>
         add_max_replicates(bootstrap, &mut bp_vector);
     });
 
-    bp_vector.into_iter().map(|bp| bp as f64 / replicates as f64).collect()
+    bp_vector
+        .into_iter()
+        .map(|bp| bp as f64 / replicates as f64)
+        .collect()
 }
