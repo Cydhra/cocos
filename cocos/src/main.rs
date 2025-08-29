@@ -1,5 +1,9 @@
 use clap::*;
-use libcocos::bootstrap::{DEFAULT_FACTORS, bootstrap, calc_bootstrap_proportion, par_bootstrap};
+use libcocos::BpTable;
+use libcocos::bootstrap::{
+    DEFAULT_FACTORS, bootstrap, calc_bootstrap_proportion, par_bootstrap,
+    par_calc_bootstrap_proportion,
+};
 use rand::{RngCore, SeedableRng, rng};
 use rand_chacha::ChaCha8Rng;
 use rayon::{ThreadPoolBuilder, current_num_threads};
@@ -169,21 +173,24 @@ fn main() {
         println!("Running bootstrap single-threaded");
     }
 
+    let mut bp_table = BpTable::new(Box::new(DEFAULT_FACTORS.clone()), likelihoods.num_trees());
     let start = Instant::now();
-    let bp = if args.threads == 1 {
-        let replicates = bootstrap(&mut rng, &likelihoods, 10000, 1.0);
-        calc_bootstrap_proportion(vec![replicates.as_ref()])
-    } else {
-        let bootstraps: Vec<_> = DEFAULT_FACTORS
-            .iter()
-            .map(|&replication_factor| {
-                par_bootstrap(&mut rng, &likelihoods, 10000, replication_factor)
-            })
-            .collect();
-        calc_bootstrap_proportion(bootstraps.iter().map(|x| x.as_ref()))
-    };
+
+    for (num_bootstrap, bootstrap_scale) in DEFAULT_FACTORS.iter().enumerate() {
+        let replicates = if args.threads == 1 {
+            bootstrap(&mut rng, &likelihoods, 10000, *bootstrap_scale)
+        } else {
+            par_bootstrap(&mut rng, &likelihoods, 10000, *bootstrap_scale)
+        };
+
+        if args.threads == 1 {
+            calc_bootstrap_proportion(&mut bp_table, &replicates, num_bootstrap);
+        } else {
+            par_calc_bootstrap_proportion(&mut bp_table, &replicates, num_bootstrap);
+        }
+    }
 
     println!("Finished in {:?}", start.elapsed());
 
-    black_box(bp);
+    black_box(bp_table);
 }

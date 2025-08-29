@@ -1,5 +1,7 @@
 use crate::vectors::dot_prod;
-use crate::{ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods};
+use crate::{
+    BootstrapReplicates, BpTable, ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods,
+};
 use rand::Rng;
 use rand::distr::Uniform;
 
@@ -78,7 +80,7 @@ fn bootstrap_slice<R: Rng>(
     num_replicates: usize,
     num_sites: usize,
     replication_factor: f64,
-) -> Vec<ResamplingWeights> {
+) -> BootstrapReplicates {
     let mut results = Vec::with_capacity(num_replicates);
 
     for _ in 0..num_replicates {
@@ -94,7 +96,7 @@ fn bootstrap_slice<R: Rng>(
         results.push(bootstrap_replicate);
     }
 
-    results
+    results.into_boxed_slice()
 }
 
 /// Generate `num_replicates` bootstrap replicates for each log-likelihood sequence and calculate
@@ -118,7 +120,7 @@ pub fn bootstrap<R: Rng>(
     likelihoods: &SiteLikelihoodTable,
     num_replicates: usize,
     replication_factor: f64,
-) -> Vec<ResamplingWeights> {
+) -> BootstrapReplicates {
     assert!(num_replicates > 0, "cannot bootstrap with 0 replicates");
     assert!(
         replication_factor > 0.0,
@@ -143,7 +145,7 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
     likelihoods: &SiteLikelihoodTable,
     num_replicates: usize,
     replication_factor: f64,
-) -> Vec<ResamplingWeights> {
+) -> BootstrapReplicates {
     use rayon::current_num_threads;
     use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
     use rayon::slice::ParallelSlice;
@@ -191,7 +193,7 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
                 });
         });
 
-    results
+    results.into_boxed_slice()
 }
 
 /// For each tree, calculate the number of replicates where that tree is the maximum likelihood
@@ -203,35 +205,8 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
 /// # Return
 /// A vector indicating for each tree how often it is the maximum likelihood within the bootstrap
 /// replicates
-pub fn count_max_replicates(bootstrap_replicates: &[ResamplingWeights]) -> Vec<u32> {
-    let num_replicates = bootstrap_replicates[0].len();
-    assert!(num_replicates > 0, "cannot calculate BP with 0 replicates");
-
-    let mut bp_vector = vec![0u32; num_replicates];
-
-    add_max_replicates(bootstrap_replicates, &mut bp_vector);
-
-    bp_vector
-}
-
-/// For each tree, calculate the number of replicates where that tree is the maximum likelihood
-/// tree and add those values to an existing BP vector.
-///
-/// # Parameters
-/// - `bootstrap_replicates` all bootstrap replicates for each tree.
-/// - `bp_vector` a vector containing an entry for each tree in the replicates
-pub fn add_max_replicates(bootstrap_replicates: &[ResamplingWeights], bp_vector: &mut [u32]) {
-    assert!(
-        !bootstrap_replicates.is_empty(),
-        "cannot bootstrap without site likelihoods"
-    );
-    assert_eq!(
-        bp_vector.len(),
-        bootstrap_replicates[0].len(),
-        "the bp_vector has a different number of entries ({}) than the bootstrap replicates ({}).",
-        bp_vector.len(),
-        bootstrap_replicates[0].len()
-    );
+pub fn count_max_replicates(bootstrap_replicates: &[Box<[f64]>], num_trees: usize) -> Vec<u32> {
+    let mut bp_vector = vec![0u32; num_trees];
 
     bootstrap_replicates.iter().for_each(|rep| {
         let best_tree = rep
@@ -242,28 +217,51 @@ pub fn add_max_replicates(bootstrap_replicates: &[ResamplingWeights], bp_vector:
             .0;
         bp_vector[best_tree] += 1;
     });
+
+    bp_vector
 }
 
 /// Calculate the bootstrap proportion of each tree for one or multiple bootstrap tables.
-pub fn calc_bootstrap_proportion<'a, I: IntoIterator<Item = &'a [ResamplingWeights]>>(
-    bootstraps: I,
-) -> Vec<f64> {
-    let mut iter = bootstraps.into_iter();
-    let mut replicates = 0;
-    let mut bp_vector = if let Some(first) = iter.next() {
-        replicates += first.len();
-        count_max_replicates(first)
-    } else {
-        panic!("cannot calculate BP values from zero bootstrap tables.");
-    };
-
-    iter.for_each(|bootstrap| {
-        replicates += bootstrap.len();
-        add_max_replicates(bootstrap, &mut bp_vector);
-    });
+pub fn calc_bootstrap_proportion(
+    bp_table: &mut BpTable,
+    bootstrap_replicates: &BootstrapReplicates,
+    num_bootstrap: usize,
+) {
+    let num_replicates = bootstrap_replicates.len();
+    let bp_vector = count_max_replicates(bootstrap_replicates, bp_table.num_trees());
 
     bp_vector
         .into_iter()
-        .map(|bp| bp as f64 / replicates as f64)
-        .collect()
+        .zip(bp_table.scale_bp_values_mut(num_bootstrap))
+        .for_each(|(count, bp_entry)| *bp_entry = count as f64 / num_replicates as f64);
+}
+
+#[cfg(feature = "rayon")]
+pub fn par_calc_bootstrap_proportion(
+    bp_table: &mut BpTable,
+    bootstrap_replicates: &BootstrapReplicates,
+    num_bootstrap: usize,
+) {
+    use rayon::current_num_threads;
+    use rayon::iter::ParallelIterator;
+    use rayon::slice::ParallelSlice;
+
+    let num_replicates = bootstrap_replicates.len();
+    let num_trees = bp_table.num_trees();
+    let chunk_size = bootstrap_replicates.len() / current_num_threads();
+    let bp_vector = bootstrap_replicates
+        .par_chunks(chunk_size)
+        .map(|chunk| count_max_replicates(chunk, bp_table.num_trees()))
+        .reduce(
+            || vec![0u32; num_trees],
+            |mut acc, item| {
+                acc.iter_mut().zip(item).for_each(|(a, b)| *a += b);
+                acc
+            },
+        );
+
+    bp_vector
+        .into_iter()
+        .zip(bp_table.scale_bp_values_mut(num_bootstrap))
+        .for_each(|(count, bp_entry)| *bp_entry = count as f64 / num_replicates as f64);
 }

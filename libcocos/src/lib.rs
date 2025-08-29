@@ -65,3 +65,68 @@ pub type SiteLikelihoods = [f64];
 /// weights drawn uniformly at random (with replacement). The weights sum to the bootstrap sequence
 /// length.
 pub type ResamplingWeights = Box<[f64]>;
+
+pub type BootstrapReplicates = Box<[Box<[f64]>]>;
+
+/// A matrix containing one or more BP values per input tree, one for each scale factor in the
+/// multiscale bootstrapping process.
+pub struct BpTable {
+    bp_values: Box<[f64]>,
+    scales: Box<[f64]>,
+    num_trees: usize,
+}
+
+impl BpTable {
+    pub fn new(scales: Box<[f64]>, num_trees: usize) -> Self {
+        Self {
+            bp_values: vec![0.0; num_trees * scales.len()].into_boxed_slice(),
+            scales,
+            num_trees,
+        }
+    }
+
+    /// How many trees are in the table
+    pub fn num_trees(&self) -> usize {
+        self.num_trees
+    }
+
+    /// How many resampling scale factors are in the table
+    pub fn num_scales(&self) -> usize {
+        self.scales.len()
+    }
+
+    /// Get all resampling scale factors that were used in resampling.
+    /// Each tree has one BP value per scale factor.
+    pub fn scales(&self) -> &[f64] {
+        &self.scales
+    }
+
+    /// Ge tall BP values for the tree at index `tree`.
+    pub fn tree_bp_values(&self, tree: usize) -> &[f64] {
+        &self.bp_values[self.num_trees * tree..(self.num_trees + 1) * tree]
+    }
+
+    /// Get mutable access to all BP values for a given scale factor.
+    /// Each tree has one BP value in this iterator, in the order of the trees.
+    pub fn scale_bp_values_mut(&mut self, scale_index: usize) -> impl Iterator<Item = &mut f64> {
+        self.bp_values
+            .iter_mut()
+            .skip(scale_index)
+            .step_by(self.num_trees)
+    }
+}
+
+impl Index<usize> for BpTable {
+    type Output = [f64];
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.bp_values[index * self.num_scales()..(index + 1) * self.num_scales()]
+    }
+}
+
+impl IndexMut<usize> for BpTable {
+    fn index_mut(&mut self, index: usize) -> &mut <Self as Index<usize>>::Output {
+        let scales = self.num_scales();
+        &mut self.bp_values[index * scales..(index + 1) * scales]
+    }
+}
