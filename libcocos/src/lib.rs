@@ -103,16 +103,14 @@ impl BpTable {
 
     /// Ge tall BP values for the tree at index `tree`.
     pub fn tree_bp_values(&self, tree: usize) -> &[f64] {
-        &self.bp_values[self.num_trees * tree..(self.num_trees + 1) * tree]
+        &self.bp_values[self.num_scales() * tree..self.num_scales() * (tree + 1)]
     }
 
     /// Get mutable access to all BP values for a given scale factor.
     /// Each tree has one BP value in this iterator, in the order of the trees.
     pub fn scale_bp_values_mut(&mut self, scale_index: usize) -> impl Iterator<Item = &mut f64> {
-        self.bp_values
-            .iter_mut()
-            .skip(scale_index)
-            .step_by(self.num_trees)
+        let step = self.num_scales();
+        self.bp_values.iter_mut().skip(scale_index).step_by(step)
     }
 }
 
