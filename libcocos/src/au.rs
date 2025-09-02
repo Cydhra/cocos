@@ -123,7 +123,7 @@ impl<'tree> Hessian for DCProblem<'tree> {
 impl<'tree> DCProblem<'tree> {
     const INV_SQRT_2_PI: f64 = 1.0 / consts::SQRT_2PI;
 
-    const fn new(bp_values: &'tree [f64], scales: &'tree [f64]) -> Self {
+    pub fn new(bp_values: &'tree [f64], scales: &'tree [f64]) -> Self {
         Self { bp_values, scales }
     }
 
