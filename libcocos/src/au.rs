@@ -4,8 +4,9 @@ use argmin::core::State;
 use argmin::core::{Executor, Gradient, Hessian};
 use argmin::solver::newton::Newton;
 use argmin_math::{ArgminDot, ArgminInv, ArgminMul, ArgminSub, Error};
+use statrs::consts;
 use statrs::distribution::{ContinuousCDF, Normal};
-use std::f64::consts::PI;
+use statrs::function::erf;
 
 #[derive(Debug, Clone)]
 struct Vec2(f64, f64);
@@ -120,8 +121,15 @@ impl<'tree> Hessian for DCProblem<'tree> {
 }
 
 impl<'tree> DCProblem<'tree> {
+    const INV_SQRT_2_PI: f64 = 1.0 / consts::SQRT_2PI;
+
     const fn new(bp_values: &'tree [f64], scales: &'tree [f64]) -> Self {
         Self { bp_values, scales }
+    }
+
+    /// The cumulative distribution function of the standard normal distribution.
+    fn cdf(x: f64) -> f64 {
+        0.5 * erf::erfc((-x) / (std::f64::consts::SQRT_2))
     }
 
     /// Gradient component of the sum of the function, parameterized with the inner pi function.
@@ -192,34 +200,31 @@ impl<'tree> DCProblem<'tree> {
     #[inline(always)]
     fn pi_k(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
-        let pi2root = (2.0 * PI).sqrt();
 
-        1.0 - (Self::exponential(c, d, scale_root) / pi2root)
+        1.0 - (Self::exponential(c, d, scale_root) / Self::FRAC_2_PI)
     }
 
     #[inline(always)]
     fn gradient_pi_c(c: f64, d: f64, scale: f64) -> f64 {
-        let pi2root = (2.0 * PI).sqrt();
         let scale_root = scale.sqrt();
 
         -Self::exponential(c, d, scale_root) * Self::gradient_inner_factor(c, d, scale)
-            / (scale * pi2root)
+            / (scale * Self::INV_SQRT_2_PI)
     }
 
     #[inline(always)]
     fn gradient_pi_d(c: f64, d: f64, scale: f64) -> f64 {
-        let pi2root = (2.0 * PI).sqrt();
         let scale_root = scale.sqrt();
 
-        -Self::exponential(c, d, scale_root) * Self::gradient_inner_factor(c, d, scale) / pi2root
+        -Self::exponential(c, d, scale_root) * Self::gradient_inner_factor(c, d, scale)
+            / Self::INV_SQRT_2_PI
     }
 
     #[inline(always)]
     fn hessian_pi_cc(c: f64, d: f64, scale: f64) -> f64 {
-        let pi2root = (2.0 * PI).sqrt();
         let scale_root = scale.sqrt();
         let exponential = Self::exponential(c, d, scale_root);
-        let scaled_pi_root = pi2root * scale;
+        let scaled_pi_root = Self::INV_SQRT_2_PI * scale;
 
         (exponential * Self::hessian_inner_factor(c, d, scale_root) / scaled_pi_root)
             - (exponential / scaled_pi_root)
@@ -227,22 +232,20 @@ impl<'tree> DCProblem<'tree> {
 
     #[inline(always)]
     fn hessian_pi_cd(c: f64, d: f64, scale: f64) -> f64 {
-        let pi2root = (2.0 * PI).sqrt();
         let scale_root = scale.sqrt();
         let exponential = Self::exponential(c, d, scale_root);
 
-        (exponential * Self::hessian_inner_factor(c, d, scale_root) / pi2root)
-            - (exponential / pi2root)
+        (exponential * Self::hessian_inner_factor(c, d, scale_root) / Self::INV_SQRT_2_PI)
+            - (exponential / Self::INV_SQRT_2_PI)
     }
 
     #[inline(always)]
     fn hessian_pi_dd(c: f64, d: f64, scale: f64) -> f64 {
-        let pi2root = (2.0 * PI).sqrt();
         let scale_root = scale.sqrt();
         let exponential = Self::exponential(c, d, scale_root);
 
-        (scale * exponential * Self::hessian_inner_factor(c, d, scale_root) / pi2root)
-            - (scale * exponential / pi2root)
+        (scale * exponential * Self::hessian_inner_factor(c, d, scale_root) / Self::INV_SQRT_2_PI)
+            - (scale * exponential / Self::INV_SQRT_2_PI)
     }
 }
 
