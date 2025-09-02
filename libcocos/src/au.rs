@@ -121,8 +121,18 @@ impl<'tree> Hessian for DCProblem<'tree> {
 }
 
 impl<'tree> DCProblem<'tree> {
+    /// The inverse of `sqrt(2 * PI)`. Note that this constant is scheduled to be included in the
+    /// standard library, but is currently considered unstable.
+    ///
+    /// See also: Tracking issue [103883](https://github.com/rust-lang/rust/issues/103883).
     const INV_SQRT_2_PI: f64 = 1.0 / consts::SQRT_2PI;
 
+    /// Create a new problem instance, which can be used in a [Newton Solver] to obtain values for the
+    /// distance and curvature parameters of the AU test.
+    ///
+    /// For details refer to https://doi.org/10.1080/10635150290069913 Appendix 9.
+    ///
+    /// [Newton Solver]: argmin::solver::newton::Newton
     pub fn new(bp_values: &'tree [f64], scales: &'tree [f64]) -> Self {
         Self { bp_values, scales }
     }
