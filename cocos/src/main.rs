@@ -1,5 +1,6 @@
 use clap::*;
 use libcocos::BpTable;
+use libcocos::au::get_au_value;
 use libcocos::bootstrap::{
     DEFAULT_FACTORS, bootstrap, calc_bootstrap_proportion, par_bootstrap,
     par_calc_bootstrap_proportion,
@@ -9,7 +10,6 @@ use rand_chacha::ChaCha8Rng;
 use rayon::{ThreadPoolBuilder, current_num_threads};
 use std::fmt::{Display, Formatter};
 use std::fs::File;
-use std::hint::black_box;
 use std::io::{BufReader, Read, stdin};
 use std::path::PathBuf;
 use std::process::exit;
@@ -192,5 +192,6 @@ fn main() {
 
     println!("Finished in {:?}", start.elapsed());
 
-    black_box(bp_table);
+    let p_value = get_au_value(&bp_table).unwrap();
+    println!("Estimated AU p-values: {:?}", p_value);
 }
