@@ -128,6 +128,7 @@ impl<'tree> DCProblem<'tree> {
     }
 
     /// The cumulative distribution function of the standard normal distribution.
+    #[inline(always)]
     fn cdf(x: f64) -> f64 {
         0.5 * erf::erfc((-x) / (std::f64::consts::SQRT_2))
     }
@@ -197,11 +198,14 @@ impl<'tree> DCProblem<'tree> {
         f * f
     }
 
+    /// Likelihood cumulative distribution function of the two parameters d, c.
+    ///
+    /// For details refer to https://doi.org/10.1080/10635150290069913 Appendix 9.
     #[inline(always)]
     fn pi_k(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
 
-        1.0 - (Self::exponential(c, d, scale_root) / Self::FRAC_2_PI)
+        1.0 - Self::cdf(d * scale_root + c / scale_root)
     }
 
     #[inline(always)]
