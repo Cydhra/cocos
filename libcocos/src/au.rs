@@ -133,6 +133,12 @@ impl<'tree> DCProblem<'tree> {
         0.5 * erf::erfc((-x) / (std::f64::consts::SQRT_2))
     }
 
+    /// The probability density function of the standard normal distribution.
+    #[inline(always)]
+    fn pdf(x: f64) -> f64 {
+        (-0.5 * x * x).exp() / (consts::SQRT_2PI)
+    }
+
     /// Gradient component of the sum of the function, parameterized with the inner pi function.
     #[inline]
     fn gradient_sum_function(
@@ -188,11 +194,6 @@ impl<'tree> DCProblem<'tree> {
     }
 
     #[inline(always)]
-    fn gradient_inner_factor(c: f64, d: f64, scale: f64) -> f64 {
-        c + scale * d
-    }
-
-    #[inline(always)]
     fn hessian_inner_factor(c: f64, d: f64, scale_root: f64) -> f64 {
         let f = c / scale_root + scale_root * d;
         f * f
@@ -208,20 +209,24 @@ impl<'tree> DCProblem<'tree> {
         1.0 - Self::cdf(d * scale_root + c / scale_root)
     }
 
+    /// Component of the gradient of [`pi_k`] with respect to the parameter `c`.
+    ///
+    /// [`pi_k`]: Self::pi_k
     #[inline(always)]
     fn gradient_pi_c(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
 
-        -Self::exponential(c, d, scale_root) * Self::gradient_inner_factor(c, d, scale)
-            / (scale * Self::INV_SQRT_2_PI)
+        -Self::pdf(d * scale_root + c / scale_root) / scale_root
     }
 
+    /// Component of the gradient of [`pi_k`] with respect to the parameter `d`.
+    ///
+    /// [`pi_k`]: Self::pi_k
     #[inline(always)]
     fn gradient_pi_d(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
 
-        -Self::exponential(c, d, scale_root) * Self::gradient_inner_factor(c, d, scale)
-            / Self::INV_SQRT_2_PI
+        -Self::pdf(d * scale_root + c / scale_root) * scale_root
     }
 
     #[inline(always)]
