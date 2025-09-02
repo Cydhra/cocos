@@ -121,12 +121,6 @@ impl<'tree> Hessian for DCProblem<'tree> {
 }
 
 impl<'tree> DCProblem<'tree> {
-    /// The inverse of `sqrt(2 * PI)`. Note that this constant is scheduled to be included in the
-    /// standard library, but is currently considered unstable.
-    ///
-    /// See also: Tracking issue [103883](https://github.com/rust-lang/rust/issues/103883).
-    const INV_SQRT_2_PI: f64 = 1.0 / consts::SQRT_2PI;
-
     /// Create a new problem instance, which can be used in a [Newton Solver] to obtain values for the
     /// distance and curvature parameters of the AU test.
     ///
@@ -146,7 +140,13 @@ impl<'tree> DCProblem<'tree> {
     /// The probability density function of the standard normal distribution.
     #[inline(always)]
     fn pdf(x: f64) -> f64 {
-        (-0.5 * x * x).exp() / (consts::SQRT_2PI)
+        (-0.5 * x * x).exp() / consts::SQRT_2PI
+    }
+
+    /// The first differential of the probability density function of the standard normal distribution.
+    #[inline(always)]
+    fn pdf_diff(x: f64) -> f64 {
+        -x * (-0.5 * x * x).exp() / consts::SQRT_2PI
     }
 
     /// Gradient component of the sum of the function, parameterized with the inner pi function.
@@ -196,19 +196,6 @@ impl<'tree> DCProblem<'tree> {
             .sum::<f64>()
     }
 
-    #[inline(always)]
-    fn exponential(c: f64, d: f64, scale_root: f64) -> f64 {
-        let frac = d * scale_root + c / scale_root;
-
-        (-(frac * frac) / 2.0).exp()
-    }
-
-    #[inline(always)]
-    fn hessian_inner_factor(c: f64, d: f64, scale_root: f64) -> f64 {
-        let f = c / scale_root + scale_root * d;
-        f * f
-    }
-
     /// Likelihood cumulative distribution function of the two parameters d, c.
     ///
     /// For details refer to https://doi.org/10.1080/10635150290069913 Appendix 9.
@@ -239,32 +226,34 @@ impl<'tree> DCProblem<'tree> {
         -Self::pdf(d * scale_root + c / scale_root) * scale_root
     }
 
+    /// Component of the hessian matrix of [`pi_k`] derived twice with respect to `c`.
+    ///
+    /// [`pi_k`]: Self::pi_k
     #[inline(always)]
     fn hessian_pi_cc(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
-        let exponential = Self::exponential(c, d, scale_root);
-        let scaled_pi_root = Self::INV_SQRT_2_PI * scale;
 
-        (exponential * Self::hessian_inner_factor(c, d, scale_root) / scaled_pi_root)
-            - (exponential / scaled_pi_root)
+        -Self::pdf_diff(d * scale_root + c / scale_root) / scale
     }
 
+    /// Component of the hessian matrix of [`pi_k`] derived once with respect to `c` and once to `d`.
+    ///
+    /// [`pi_k`]: Self::pi_k
     #[inline(always)]
     fn hessian_pi_cd(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
-        let exponential = Self::exponential(c, d, scale_root);
 
-        (exponential * Self::hessian_inner_factor(c, d, scale_root) / Self::INV_SQRT_2_PI)
-            - (exponential / Self::INV_SQRT_2_PI)
+        -Self::pdf_diff(d * scale_root + c / scale_root)
     }
 
+    /// Component of the hessian matrix of [`pi_k`] derived twice with respect to `d`.
+    ///
+    /// [`pi_k`]: Self::pi_k
     #[inline(always)]
     fn hessian_pi_dd(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
-        let exponential = Self::exponential(c, d, scale_root);
 
-        (scale * exponential * Self::hessian_inner_factor(c, d, scale_root) / Self::INV_SQRT_2_PI)
-            - (scale * exponential / Self::INV_SQRT_2_PI)
+        -Self::pdf_diff(d * scale_root + c / scale_root) * scale
     }
 }
 
