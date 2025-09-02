@@ -158,7 +158,8 @@ impl<'tree> DCProblem<'tree> {
         d: f64,
         pi_gradient: fn(f64, f64, f64) -> f64,
     ) -> f64 {
-        bp_values
+        // negative of the actual gradient because we want to find a maximum instead of a minimum.
+        -bp_values
             .iter()
             .zip(scales)
             .map(|(&bp, &scale)| {
@@ -180,7 +181,8 @@ impl<'tree> DCProblem<'tree> {
         pi_hess_1: fn(f64, f64, f64) -> f64,
         pi_hess_2: fn(f64, f64, f64) -> f64,
     ) -> f64 {
-        bp_values
+        // negative of the actual hessian because we want to find a maximum instead of a minimum.
+        -bp_values
             .iter()
             .zip(scales)
             .map(|(&bp, &scale)| {
