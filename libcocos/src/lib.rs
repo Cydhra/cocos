@@ -2,6 +2,8 @@
 
 use std::ops::{Index, IndexMut};
 
+pub mod au;
+
 pub mod bootstrap;
 
 pub mod vectors;
