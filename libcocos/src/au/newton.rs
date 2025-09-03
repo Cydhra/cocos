@@ -2,12 +2,10 @@
 //! the `c` and `d` values for the AU test.
 
 use crate::BpTable;
-use crate::au::math::{Matrix2by2, Vec2};
+use crate::au::math::{Matrix2by2, Vec2, cdf, pdf, pdf_diff};
 use crate::bootstrap::DEFAULT_REPLICATES;
 use argmin::core::{Error, Executor, Gradient, Hessian, State};
 use argmin::solver::newton::Newton;
-use statrs::consts;
-use statrs::function::erf;
 
 struct DCProblem<'tree> {
     scales: &'tree [f64],
@@ -87,24 +85,6 @@ impl<'tree> DCProblem<'tree> {
         Self { bp_values, scales }
     }
 
-    /// The cumulative distribution function of the standard normal distribution.
-    #[inline(always)]
-    fn cdf(x: f64) -> f64 {
-        0.5 * erf::erfc((-x) / (std::f64::consts::SQRT_2))
-    }
-
-    /// The probability density function of the standard normal distribution.
-    #[inline(always)]
-    fn pdf(x: f64) -> f64 {
-        (-0.5 * x * x).exp() / consts::SQRT_2PI
-    }
-
-    /// The first differential of the probability density function of the standard normal distribution.
-    #[inline(always)]
-    fn pdf_diff(x: f64) -> f64 {
-        -x * (-0.5 * x * x).exp() / consts::SQRT_2PI
-    }
-
     /// Gradient component of the sum of the function, parameterized with the inner pi function.
     #[inline]
     fn gradient_sum_function(
@@ -161,7 +141,7 @@ impl<'tree> DCProblem<'tree> {
     fn pi_k(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
 
-        1.0 - Self::cdf(d * scale_root + c / scale_root)
+        1.0 - cdf(d * scale_root + c / scale_root)
     }
 
     /// Component of the gradient of [`pi_k`] with respect to the parameter `c`.
@@ -171,7 +151,7 @@ impl<'tree> DCProblem<'tree> {
     fn gradient_pi_c(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
 
-        -Self::pdf(d * scale_root + c / scale_root) / scale_root
+        -pdf(d * scale_root + c / scale_root) / scale_root
     }
 
     /// Component of the gradient of [`pi_k`] with respect to the parameter `d`.
@@ -181,7 +161,7 @@ impl<'tree> DCProblem<'tree> {
     fn gradient_pi_d(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
 
-        -Self::pdf(d * scale_root + c / scale_root) * scale_root
+        -pdf(d * scale_root + c / scale_root) * scale_root
     }
 
     /// Component of the hessian matrix of [`pi_k`] derived twice with respect to `c`.
@@ -191,7 +171,7 @@ impl<'tree> DCProblem<'tree> {
     fn hessian_pi_cc(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
 
-        -Self::pdf_diff(d * scale_root + c / scale_root) / scale
+        -pdf_diff(d * scale_root + c / scale_root) / scale
     }
 
     /// Component of the hessian matrix of [`pi_k`] derived once with respect to `c` and once to `d`.
@@ -201,7 +181,7 @@ impl<'tree> DCProblem<'tree> {
     fn hessian_pi_cd(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
 
-        -Self::pdf_diff(d * scale_root + c / scale_root)
+        -pdf_diff(d * scale_root + c / scale_root)
     }
 
     /// Component of the hessian matrix of [`pi_k`] derived twice with respect to `d`.
@@ -211,7 +191,7 @@ impl<'tree> DCProblem<'tree> {
     fn hessian_pi_dd(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
 
-        -Self::pdf_diff(d * scale_root + c / scale_root) * scale
+        -pdf_diff(d * scale_root + c / scale_root) * scale
     }
 }
 

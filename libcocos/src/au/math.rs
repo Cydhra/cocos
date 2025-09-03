@@ -2,6 +2,8 @@
 //! used by the AU test.
 
 use argmin_math::{ArgminDot, ArgminInv, ArgminMul, ArgminSub};
+use statrs::consts;
+use statrs::function::erf;
 
 #[derive(Debug, Clone)]
 pub(super) struct Vec2(pub f64, pub f64);
@@ -46,4 +48,29 @@ impl ArgminDot<Vec2, Vec2> for Matrix2by2 {
             self.2 * other.0 + self.3 * other.1,
         )
     }
+}
+
+/// The cumulative distribution function of the standard normal distribution.
+#[inline(always)]
+pub(crate) fn cdf(x: f64) -> f64 {
+    0.5 * erf::erfc((-x) / (std::f64::consts::SQRT_2))
+}
+
+/// The probability density function of the standard normal distribution.
+#[inline(always)]
+pub(crate) fn pdf(x: f64) -> f64 {
+    (-0.5 * x * x).exp() / consts::SQRT_2PI
+}
+
+/// The first differential of the probability density function of the standard normal distribution.
+#[inline(always)]
+pub(crate) fn pdf_diff(x: f64) -> f64 {
+    -x * (-0.5 * x * x).exp() / consts::SQRT_2PI
+}
+
+/// The inverse CDF or quantile function of the standard normal distribution.
+#[inline(always)]
+pub(crate) fn inv_cdf(x: f64) -> f64 {
+    debug_assert!(0.0 <= x && x <= 1.0);
+    -(std::f64::consts::SQRT_2 * erf::erfc_inv(2.0 * x))
 }
