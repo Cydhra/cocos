@@ -99,7 +99,9 @@ impl<'tree> DCProblem<'tree> {
             .iter()
             .zip(scales)
             .map(|(&bp, &scale)| {
-                DEFAULT_REPLICATES as f64 * pi_gradient(c, d, scale) / Self::pi_k(c, d, scale)
+                let pi = Self::pi_k(c, d, scale);
+
+                DEFAULT_REPLICATES as f64 * pi_gradient(c, d, scale) * (bp - pi) / (pi * (1.0 - pi))
             })
             .sum::<f64>()
     }
@@ -126,10 +128,12 @@ impl<'tree> DCProblem<'tree> {
                 let pi_k_sq = pi_k * pi_k;
 
                 DEFAULT_REPLICATES as f64
-                    * (-(1.0 - bp) * pi_grad_1_1(c, d, scale) * pi_grad_1_2(c, d, scale) / pi_k_sq
-                        - bp * pi_grad_2_1(c, d, scale) * pi_grad_2_2(c, d, scale) / pi_k_sq
-                        + (1.0 - bp) * pi_hess_1(c, d, scale) / pi_k
-                        + bp * pi_hess_2(c, d, scale) / pi_k)
+                    * (-(1.0 - bp) * pi_grad_1_1(c, d, scale) * pi_grad_1_2(c, d, scale)
+                        / (1.0 - pi_k_sq)
+                        - bp * pi_grad_2_1(c, d, scale) * pi_grad_2_2(c, d, scale)
+                            / (1.0 - pi_k_sq)
+                        - (1.0 - bp) * pi_hess_1(c, d, scale) / (1.0 - pi_k)
+                        + bp * pi_hess_2(c, d, scale) / (1.0 - pi_k))
             })
             .sum::<f64>()
     }
@@ -209,11 +213,11 @@ pub fn estimate_curv_dist_newton(bp_values: &BpTable) -> Result<Vec<(f64, f64)>,
     let cd_vals = (0..10)
         .map(|i| {
             let problem = DCProblem::new(bp_values.tree_bp_values(i), bp_values.scales());
-            let init = Vec2(1.0, 1.0);
-            let solver = Newton::<f64>::new();
+            let init = Vec2(1.5, 2.0);
+            let solver = Newton::<f64>::new().with_gamma(0.1)?;
 
             let result = Executor::new(problem, solver)
-                .configure(|state| state.param(init).max_iters(10))
+                .configure(|state| state.param(init).max_iters(800))
                 .run()?;
 
             let Some(&Vec2(c, d)) = result.state().get_best_param() else {

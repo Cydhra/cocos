@@ -11,7 +11,7 @@ pub use rss::estimate_curv_dist_rss;
 
 pub fn get_au_value(bp_values: &BpTable) -> Result<Vec<f64>, argmin_math::Error> {
     let normal = Normal::new(0.0, 1.0);
-    let results = estimate_curv_dist_rss(bp_values)?;
+    let results = estimate_curv_dist_newton(bp_values)?;
 
     results
         .iter()
