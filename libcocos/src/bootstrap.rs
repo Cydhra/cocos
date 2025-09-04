@@ -223,6 +223,25 @@ pub fn count_max_replicates(bootstrap_replicates: &[Box<[f64]>], num_trees: usiz
     bp_vector
 }
 
+/// Convert the bootstrap counts to a bootstrap proportion. This includes additive smoothing to avoid
+/// zero-valued BP values.
+fn count_to_proportion<I: IntoIterator<Item = u32>>(
+    bp_table: &mut BpTable,
+    bp_vector: I,
+    num_bootstrap: usize,
+    num_replicates: usize,
+    num_trees: usize,
+    additive_smoothing: usize,
+) {
+    bp_vector
+        .into_iter()
+        .zip(bp_table.scale_bp_values_mut(num_bootstrap))
+        .for_each(|(count, bp_entry)| {
+            *bp_entry = (count as usize + additive_smoothing) as f64
+                / (num_replicates + num_trees * additive_smoothing) as f64
+        });
+}
+
 /// Calculate the bootstrap proportion of each tree for one or multiple bootstrap tables.
 pub fn calc_bootstrap_proportion(
     bp_table: &mut BpTable,
@@ -231,11 +250,16 @@ pub fn calc_bootstrap_proportion(
 ) {
     let num_replicates = bootstrap_replicates.len();
     let bp_vector = count_max_replicates(bootstrap_replicates, bp_table.num_trees());
+    let num_trees = bp_table.num_trees();
 
-    bp_vector
-        .into_iter()
-        .zip(bp_table.scale_bp_values_mut(num_bootstrap))
-        .for_each(|(count, bp_entry)| *bp_entry = count as f64 / num_replicates as f64);
+    count_to_proportion(
+        bp_table,
+        bp_vector,
+        num_bootstrap,
+        num_replicates,
+        num_trees,
+        1,
+    );
 }
 
 #[cfg(feature = "rayon")]
@@ -262,8 +286,12 @@ pub fn par_calc_bootstrap_proportion(
             },
         );
 
-    bp_vector
-        .into_iter()
-        .zip(bp_table.scale_bp_values_mut(num_bootstrap))
-        .for_each(|(count, bp_entry)| *bp_entry = count as f64 / num_replicates as f64);
+    count_to_proportion(
+        bp_table,
+        bp_vector,
+        num_bootstrap,
+        num_replicates,
+        num_trees,
+        1,
+    );
 }
