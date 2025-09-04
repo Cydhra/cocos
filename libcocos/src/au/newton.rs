@@ -205,7 +205,7 @@ impl<'tree> DCProblem<'tree> {
 /// Returns a vector of tuples containing the `c` and `d` value estimates for each tree.
 ///
 /// For details refer to https://doi.org/10.1080/10635150290069913.
-pub fn estimate_curv_dist(bp_values: &BpTable) -> Result<Vec<(f64, f64)>, Error> {
+pub fn estimate_curv_dist_newton(bp_values: &BpTable) -> Result<Vec<(f64, f64)>, Error> {
     let cd_vals = (0..10)
         .map(|i| {
             let problem = DCProblem::new(bp_values.tree_bp_values(i), bp_values.scales());
