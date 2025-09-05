@@ -231,30 +231,36 @@ pub fn count_max_replicates(bootstrap_replicates: &[Box<[f64]>], num_trees: usiz
     bp_vector
 }
 
-fn clamp(min: f64, max: f64, value: f64) -> f64 {
-    f64::max(min, f64::min(max, value))
-}
-
-/// Convert the bootstrap counts to a bootstrap proportion. This includes additive smoothing to avoid
-/// zero-valued BP values.
+/// Convert the bootstrap counts to a bootstrap proportion. This includes the continuity correction
+/// implemented in the original `consel` software.
+///
+/// # Parameters
+/// - `bp_table` the bp value table that is being filled with the proportions.
+/// - `bp_vector` an iterable containing the counts of how often each tree was the best in a
+///   bootstrap replicate
+/// - `scale_index` the index of the scaling factor we are currently converting. Each set of
+///   bootstrap replicates is converted independently, and this index is used to write the
+///   bootstrap proportion in the correct entry in each tree's table row.
+/// - `num_replicates` how many replicates were generated for the scaling factor at the given index.
+///
+/// # References
+/// For the correction, see the original [consel source code](https://github.com/shimo-lab/consel/blob/1a532a4fe9e7d4e9101f2bbe64613f3b0cfc6274/src/consel.c#L976):
 fn count_to_proportion<I: IntoIterator<Item = u32>>(
     bp_table: &mut BpTable,
     bp_vector: I,
     scale_index: usize,
     num_replicates: usize,
 ) {
-    let infimum = 1.0 / (num_replicates + 1) as f64;
-    let supremum = num_replicates as f64 / (num_replicates + 1) as f64;
+    const CORR: f64 = 1.0;
 
     bp_vector
         .into_iter()
         .zip(bp_table.scale_bp_values_mut(scale_index))
         .for_each(|(count, bp_entry)| {
-            *bp_entry = clamp(
-                infimum,
-                supremum,
-                (count as usize) as f64 / num_replicates as f64,
-            )
+            let c = count as f64;
+            let n = num_replicates as f64;
+            let correction = n * 0.5 + (n - 2.0 * CORR) / n * (c - n * 0.5);
+            *bp_entry = correction / n;
         });
 }
 
