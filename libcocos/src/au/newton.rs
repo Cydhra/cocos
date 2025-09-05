@@ -126,14 +126,14 @@ impl<'tree> NewtonProblem<'tree> {
             .map(|(&bp, &scale)| {
                 let pi_k = Self::pi_k(c, d, scale);
                 let pi_k_sq = pi_k * pi_k;
+                let pi_rev_sq = (1.0 - pi_k) * (1.0 - pi_k);
 
                 DEFAULT_REPLICATES as f64
                     * (-(1.0 - bp) * pi_grad_1_1(c, d, scale) * pi_grad_1_2(c, d, scale)
-                        / (1.0 - pi_k_sq)
-                        - bp * pi_grad_2_1(c, d, scale) * pi_grad_2_2(c, d, scale)
-                            / (1.0 - pi_k_sq)
+                        / pi_rev_sq
+                        - bp * pi_grad_2_1(c, d, scale) * pi_grad_2_2(c, d, scale) / pi_k_sq
                         - (1.0 - bp) * pi_hess_1(c, d, scale) / (1.0 - pi_k)
-                        + bp * pi_hess_2(c, d, scale) / (1.0 - pi_k))
+                        + bp * pi_hess_2(c, d, scale) / pi_k)
             })
             .sum::<f64>()
     }
@@ -209,15 +209,21 @@ impl<'tree> NewtonProblem<'tree> {
 /// Returns a vector of tuples containing the `c` and `d` value estimates for each tree.
 ///
 /// For details refer to https://doi.org/10.1080/10635150290069913.
-pub fn estimate_curv_dist_newton(bp_values: &BpTable) -> Result<Vec<(f64, f64)>, Error> {
-    let cd_vals = (0..10)
-        .map(|i| {
-            let problem = NewtonProblem::new(bp_values.tree_bp_values(i), bp_values.scales());
-            let init = Vec2(1.5, 2.0);
-            let solver = Newton::<f64>::new().with_gamma(0.1)?;
+pub fn estimate_curv_dist_newton<I: IntoIterator<Item = (f64, f64)>>(
+    bp_values: &BpTable,
+    start_params: I,
+) -> Result<Vec<(f64, f64)>, Error> {
+    let cd_vals = (0..bp_values.num_trees())
+        .zip(start_params.into_iter())
+        .map(|(tree_index, (c, d))| {
+            let problem =
+                NewtonProblem::new(bp_values.tree_bp_values(tree_index), bp_values.scales());
+
+            let init = Vec2(c, d);
+            let solver = Newton::<f64>::new().with_gamma(0.1).unwrap();
 
             let result = Executor::new(problem, solver)
-                .configure(|state| state.param(init).max_iters(800))
+                .configure(|state| state.param(init).max_iters(5_000))
                 .run()?;
 
             let Some(&Vec2(c, d)) = result.state().get_best_param() else {
