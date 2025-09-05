@@ -7,12 +7,12 @@ use crate::bootstrap::DEFAULT_REPLICATES;
 use argmin::core::{Error, Executor, Gradient, Hessian, State};
 use argmin::solver::newton::Newton;
 
-struct DCProblem<'tree> {
+struct NewtonProblem<'tree> {
     scales: &'tree [f64],
     bp_values: &'tree [f64],
 }
 
-impl<'tree> Gradient for DCProblem<'tree> {
+impl<'tree> Gradient for NewtonProblem<'tree> {
     type Param = Vec2;
     type Gradient = Vec2;
 
@@ -26,7 +26,7 @@ impl<'tree> Gradient for DCProblem<'tree> {
     }
 }
 
-impl<'tree> Hessian for DCProblem<'tree> {
+impl<'tree> Hessian for NewtonProblem<'tree> {
     type Param = Vec2;
     type Hessian = Matrix2by2;
 
@@ -74,7 +74,7 @@ impl<'tree> Hessian for DCProblem<'tree> {
     }
 }
 
-impl<'tree> DCProblem<'tree> {
+impl<'tree> NewtonProblem<'tree> {
     /// Create a new problem instance, which can be used in a [Newton Solver] to obtain values for the
     /// distance and curvature parameters of the AU test.
     ///
@@ -212,7 +212,7 @@ impl<'tree> DCProblem<'tree> {
 pub fn estimate_curv_dist_newton(bp_values: &BpTable) -> Result<Vec<(f64, f64)>, Error> {
     let cd_vals = (0..10)
         .map(|i| {
-            let problem = DCProblem::new(bp_values.tree_bp_values(i), bp_values.scales());
+            let problem = NewtonProblem::new(bp_values.tree_bp_values(i), bp_values.scales());
             let init = Vec2(1.5, 2.0);
             let solver = Newton::<f64>::new().with_gamma(0.1)?;
 
