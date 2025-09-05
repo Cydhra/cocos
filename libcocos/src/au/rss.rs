@@ -107,14 +107,15 @@ impl<'tree> RssProblem<'tree> {
 }
 
 pub fn estimate_curv_dist_rss(bp_values: &BpTable) -> Result<Vec<(f64, f64)>, Error> {
-    let cd_vals = (0..10)
+    let estimates = (0..bp_values.num_trees)
         .map(|i| {
             let problem = RssProblem::new(bp_values.tree_bp_values(i), bp_values.scales());
             let init = Vec2(1.0, 1.0);
-            let solver = GaussNewton::<f64>::new().with_gamma(0.2).unwrap();
+            let solver = GaussNewton::<f64>::new().with_gamma(0.1).unwrap();
 
+            // RSS usually converges, so the high limit is usually not reached.
             let result = Executor::new(problem, solver)
-                .configure(|state| state.param(init).max_iters(100))
+                .configure(|state| state.param(init).max_iters(1000))
                 .run()?;
 
             let Some(&Vec2(c, d)) = result.state().get_best_param() else {
@@ -125,5 +126,5 @@ pub fn estimate_curv_dist_rss(bp_values: &BpTable) -> Result<Vec<(f64, f64)>, Er
         })
         .collect::<Result<Vec<(f64, f64)>, Error>>();
 
-    cd_vals
+    estimates
 }
