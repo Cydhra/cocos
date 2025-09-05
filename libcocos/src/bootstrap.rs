@@ -40,7 +40,10 @@ pub fn generate_selection_vector<R: Rng>(
     selection_vector
 }
 
-/// Compute the log likelihood of a bootstrap replicate.
+/// Compute the log likelihood of a bootstrap replicate. A bootstrap replicate is encoded as a
+/// weight vector containing an integer weight per site. Computing the likelihood of the replicate
+/// is thus reduced to the dot product of the weight vector (which defines how often bootstrapping
+/// chose each site) and the original site likelihood vector.
 ///
 /// # Parameters
 /// - `site_lh` a vector containing site log-likelihood values for a tree
@@ -63,11 +66,13 @@ pub fn compute_replicate_likelihood(
 }
 
 /// Generate `num_replicates` bootstrap replicates for each log-likelihood sequence and calculate
-/// their log-likelihood value.
+/// their log-likelihood value. This implements the actual work of bootstrapping, but operates on
+/// a slice of [`SiteLikelihoods`] vectors, making this function the kernel to the sequential
+/// and parallel bootstrapping algorithms.
 ///
 /// # Parameters
 /// - `rng` random number generator state
-/// - `likelihoods` a slice of [SiteLikelihoods] vectors
+/// - `likelihoods` a slice of [`SiteLikelihoods`] vectors
 /// - `num_replicates` how many replicates to generate
 /// - `num_sites` how many entries the likelihood vectors have
 /// - `replication_factor` the ratio between the original alignment length and the length of bootstrap sequences
@@ -75,6 +80,8 @@ pub fn compute_replicate_likelihood(
 /// # Return
 /// Returns a vector containing vectors of likelihoods for each bootstrap replicate (i.e., for each
 /// tree).
+///
+/// [`SiteLikelihoods`]: SiteLikelihoods
 #[inline]
 fn bootstrap_slice<R: Rng>(
     rng: &mut R,
@@ -106,8 +113,9 @@ fn bootstrap_slice<R: Rng>(
 ///
 /// # Parameters
 /// - `rng` random number generator state
-/// - `likelihoods` a matrix of site log-likelihoods for each phylogenetic tree.
-/// - `num_replicates` how many replicates to generate
+/// - `likelihoods` a matrix of site log-likelihoods, one vector of site log-likelihoods per input
+///   tree.
+/// - `num_replicates` how many replicates to generate per tree
 /// - `replication_factor` the ratio between the original alignment length and the length of bootstrap sequences
 ///
 /// # Return
@@ -223,22 +231,30 @@ pub fn count_max_replicates(bootstrap_replicates: &[Box<[f64]>], num_trees: usiz
     bp_vector
 }
 
+fn clamp(min: f64, max: f64, value: f64) -> f64 {
+    f64::max(min, f64::min(max, value))
+}
+
 /// Convert the bootstrap counts to a bootstrap proportion. This includes additive smoothing to avoid
 /// zero-valued BP values.
 fn count_to_proportion<I: IntoIterator<Item = u32>>(
     bp_table: &mut BpTable,
     bp_vector: I,
-    num_bootstrap: usize,
+    scale_index: usize,
     num_replicates: usize,
-    num_trees: usize,
-    additive_smoothing: usize,
 ) {
+    let infimum = 1.0 / (num_replicates + 1) as f64;
+    let supremum = num_replicates as f64 / (num_replicates + 1) as f64;
+
     bp_vector
         .into_iter()
-        .zip(bp_table.scale_bp_values_mut(num_bootstrap))
+        .zip(bp_table.scale_bp_values_mut(scale_index))
         .for_each(|(count, bp_entry)| {
-            *bp_entry = (count as usize + additive_smoothing) as f64
-                / (num_replicates + num_trees * additive_smoothing) as f64
+            *bp_entry = clamp(
+                infimum,
+                supremum,
+                (count as usize) as f64 / num_replicates as f64,
+            )
         });
 }
 
@@ -246,20 +262,12 @@ fn count_to_proportion<I: IntoIterator<Item = u32>>(
 pub fn calc_bootstrap_proportion(
     bp_table: &mut BpTable,
     bootstrap_replicates: &BootstrapReplicates,
-    num_bootstrap: usize,
+    scale_index: usize,
 ) {
     let num_replicates = bootstrap_replicates.len();
     let bp_vector = count_max_replicates(bootstrap_replicates, bp_table.num_trees());
-    let num_trees = bp_table.num_trees();
 
-    count_to_proportion(
-        bp_table,
-        bp_vector,
-        num_bootstrap,
-        num_replicates,
-        num_trees,
-        1,
-    );
+    count_to_proportion(bp_table, bp_vector, scale_index, num_replicates);
 }
 
 #[cfg(feature = "rayon")]
@@ -286,12 +294,5 @@ pub fn par_calc_bootstrap_proportion(
             },
         );
 
-    count_to_proportion(
-        bp_table,
-        bp_vector,
-        num_bootstrap,
-        num_replicates,
-        num_trees,
-        1,
-    );
+    count_to_proportion(bp_table, bp_vector, num_bootstrap, num_replicates);
 }
