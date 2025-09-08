@@ -2,7 +2,7 @@
 //! the `c` and `d` values for the AU test.
 
 use crate::BpTable;
-use crate::au::math::{Matrix2by2, Vec2, cdf, pdf, pdf_diff};
+use crate::au::math::{Matrix2by2, Vec2, cdf, pdf};
 use crate::bootstrap::DEFAULT_REPLICATES;
 use argmin::core::{Error, Executor, Gradient, Hessian, State};
 use argmin::solver::newton::Newton;
@@ -33,42 +33,8 @@ impl<'tree> Hessian for NewtonProblem<'tree> {
     fn hessian(&self, param: &Self::Param) -> Result<Self::Hessian, Error> {
         let &Vec2(c, d) = param;
 
-        let hess_cc = Self::hessian_sum_function(
-            self.bp_values,
-            self.scales,
-            c,
-            d,
-            Self::gradient_pi_c,
-            Self::gradient_pi_c,
-            Self::gradient_pi_c,
-            Self::gradient_pi_c,
-            Self::hessian_pi_cc,
-            Self::hessian_pi_cc,
-        );
-        let hess_cd = Self::hessian_sum_function(
-            self.bp_values,
-            self.scales,
-            c,
-            d,
-            Self::gradient_pi_d,
-            Self::gradient_pi_c,
-            Self::gradient_pi_d,
-            Self::gradient_pi_c,
-            Self::hessian_pi_cd,
-            Self::hessian_pi_cd,
-        );
-        let hess_dd = Self::hessian_sum_function(
-            self.bp_values,
-            self.scales,
-            c,
-            d,
-            Self::gradient_pi_d,
-            Self::gradient_pi_d,
-            Self::gradient_pi_d,
-            Self::gradient_pi_d,
-            Self::hessian_pi_dd,
-            Self::hessian_pi_dd,
-        );
+        let (hess_cc, hess_cd, hess_dd) =
+            Self::hessian_sum_function(self.bp_values, self.scales, c, d);
 
         Ok(Matrix2by2(hess_cc, hess_cd, hess_cd, hess_dd))
     }
@@ -95,7 +61,7 @@ impl<'tree> NewtonProblem<'tree> {
         pi_gradient: fn(f64, f64, f64) -> f64,
     ) -> f64 {
         // negative of the actual gradient because we want to find a maximum instead of a minimum.
-        -bp_values
+        bp_values
             .iter()
             .zip(scales)
             .map(|(&bp, &scale)| {
@@ -107,35 +73,19 @@ impl<'tree> NewtonProblem<'tree> {
     }
 
     #[inline]
-    fn hessian_sum_function(
-        bp_values: &[f64],
-        scales: &[f64],
-        c: f64,
-        d: f64,
-        pi_grad_1_1: fn(f64, f64, f64) -> f64,
-        pi_grad_1_2: fn(f64, f64, f64) -> f64,
-        pi_grad_2_1: fn(f64, f64, f64) -> f64,
-        pi_grad_2_2: fn(f64, f64, f64) -> f64,
-        pi_hess_1: fn(f64, f64, f64) -> f64,
-        pi_hess_2: fn(f64, f64, f64) -> f64,
-    ) -> f64 {
-        // negative of the actual hessian because we want to find a maximum instead of a minimum.
-        -bp_values
-            .iter()
-            .zip(scales)
-            .map(|(&bp, &scale)| {
-                let pi_k = Self::pi_k(c, d, scale);
-                let pi_k_sq = pi_k * pi_k;
-                let pi_rev_sq = (1.0 - pi_k) * (1.0 - pi_k);
+    fn hessian_sum_function(bp_values: &[f64], scales: &[f64], c: f64, d: f64) -> (f64, f64, f64) {
+        let mut hessian_cc = 0.0;
+        let mut hessian_dc = 0.0;
+        let mut hessian_dd = 0.0;
+        for (&bp, &scale) in bp_values.iter().zip(scales) {
+            let count = DEFAULT_REPLICATES as f64 * bp;
+            let core = Self::hessian_core(c, d, scale, count);
+            hessian_cc += core / scale;
+            hessian_dc += core;
+            hessian_dd += core * scale;
+        }
 
-                DEFAULT_REPLICATES as f64
-                    * (-(1.0 - bp) * pi_grad_1_1(c, d, scale) * pi_grad_1_2(c, d, scale)
-                        / pi_rev_sq
-                        - bp * pi_grad_2_1(c, d, scale) * pi_grad_2_2(c, d, scale) / pi_k_sq
-                        - (1.0 - bp) * pi_hess_1(c, d, scale) / (1.0 - pi_k)
-                        + bp * pi_hess_2(c, d, scale) / pi_k)
-            })
-            .sum::<f64>()
+        (hessian_cc, hessian_dc, hessian_dd)
     }
 
     /// Likelihood cumulative distribution function of the two parameters d, c.
@@ -168,34 +118,20 @@ impl<'tree> NewtonProblem<'tree> {
         -pdf(d * scale_root + c / scale_root) * scale_root
     }
 
-    /// Component of the hessian matrix of [`pi_k`] derived twice with respect to `c`.
-    ///
-    /// [`pi_k`]: Self::pi_k
+    /// The common part of all three hessian derivatives
     #[inline(always)]
-    fn hessian_pi_cc(c: f64, d: f64, scale: f64) -> f64 {
+    fn hessian_core(c: f64, d: f64, scale: f64, count: f64) -> f64 {
+        let pi_k = Self::pi_k(c, d, scale);
+        let pi_k_sq = pi_k * pi_k;
+        let pi_rev_sq = (1.0 - pi_k) * (1.0 - pi_k);
+
         let scale_root = scale.sqrt();
-
-        -pdf_diff(d * scale_root + c / scale_root) / scale
-    }
-
-    /// Component of the hessian matrix of [`pi_k`] derived once with respect to `c` and once to `d`.
-    ///
-    /// [`pi_k`]: Self::pi_k
-    #[inline(always)]
-    fn hessian_pi_cd(c: f64, d: f64, scale: f64) -> f64 {
-        let scale_root = scale.sqrt();
-
-        -pdf_diff(d * scale_root + c / scale_root)
-    }
-
-    /// Component of the hessian matrix of [`pi_k`] derived twice with respect to `d`.
-    ///
-    /// [`pi_k`]: Self::pi_k
-    #[inline(always)]
-    fn hessian_pi_dd(c: f64, d: f64, scale: f64) -> f64 {
-        let scale_root = scale.sqrt();
-
-        -pdf_diff(d * scale_root + c / scale_root) * scale
+        let linear = d * scale_root + c / scale_root;
+        let density = pdf(linear);
+        density
+            * ((density * (-count + 2.0 * count * pi_k - DEFAULT_REPLICATES as f64 * pi_k_sq)
+                / (pi_k_sq * pi_rev_sq))
+                + linear * (count - DEFAULT_REPLICATES as f64 * pi_k) / (pi_k * (1.0 - pi_k)))
     }
 }
 
@@ -223,7 +159,7 @@ pub fn estimate_curv_dist_newton<I: IntoIterator<Item = (f64, f64)>>(
             let solver = Newton::<f64>::new().with_gamma(0.1).unwrap();
 
             let result = Executor::new(problem, solver)
-                .configure(|state| state.param(init).max_iters(5_000))
+                .configure(|state| state.param(init).max_iters(300))
                 .run()?;
 
             let Some(&Vec2(c, d)) = result.state().get_best_param() else {

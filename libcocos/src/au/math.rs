@@ -177,12 +177,6 @@ pub(crate) fn pdf(x: f64) -> f64 {
     (-0.5 * x * x).exp() / consts::SQRT_2PI
 }
 
-/// The first differential of the probability density function of the standard normal distribution.
-#[inline(always)]
-pub(crate) fn pdf_diff(x: f64) -> f64 {
-    -x * (-0.5 * x * x).exp() / consts::SQRT_2PI
-}
-
 /// The inverse CDF or quantile function of the standard normal distribution.
 #[inline(always)]
 pub(crate) fn inv_cdf(x: f64) -> f64 {
