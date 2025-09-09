@@ -251,16 +251,11 @@ fn count_to_proportion<I: IntoIterator<Item = u32>>(
     scale_index: usize,
     num_replicates: usize,
 ) {
-    const CORR: f64 = 1.0;
-
     bp_vector
         .into_iter()
         .zip(bp_table.scale_bp_values_mut(scale_index))
         .for_each(|(count, bp_entry)| {
-            let c = count as f64;
-            let n = num_replicates as f64;
-            let correction = n * 0.5 + (n - 2.0 * CORR) / n * (c - n * 0.5);
-            *bp_entry = correction / n;
+            *bp_entry = count as f64 / num_replicates as f64;
         });
 }
 
