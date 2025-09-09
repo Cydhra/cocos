@@ -32,6 +32,10 @@ impl ArgminSub<Vec2, Vec2> for Vec2 {
 impl ArgminInv<Matrix2by2> for Matrix2by2 {
     fn inv(&self) -> Result<Matrix2by2, argmin_math::Error> {
         let det = self.0 * self.3 - self.1 * self.2;
+        if det.abs() == 0.0 {
+            println!("warning: hessian is singular");
+        }
+
         Ok(Matrix2by2(
             self.3 / det,
             -self.1 / det,
