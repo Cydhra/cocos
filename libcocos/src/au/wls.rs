@@ -116,7 +116,7 @@ impl<'tree> WlsProblem<'tree> {
             .iter()
             .zip(self.scale_roots.iter())
             .zip(weight_vector.iter())
-            .map(|((&dist, &s), &weight)| weight * s * dist)
+            .map(|((&dist, &s), &weight)| weight * (1.0 / s) * dist)
             .sum::<f64>();
 
         // compute estimates for c and d by inverting the model matrix and multiplying it with
