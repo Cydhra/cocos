@@ -18,10 +18,7 @@ impl<'tree> Gradient for NewtonProblem<'tree> {
 
     fn gradient(&self, param: &Self::Param) -> Result<Self::Gradient, argmin_math::Error> {
         let Vec2(c, d) = *param;
-        let gradient_c =
-            Self::gradient_sum_function(self.bp_values, self.scales, c, d, Self::gradient_pi_c);
-        let gradient_d =
-            Self::gradient_sum_function(self.bp_values, self.scales, c, d, Self::gradient_pi_d);
+        let (gradient_c, gradient_d) = self.gradient_sum_function(c, d);
         Ok(Vec2(gradient_c, gradient_d))
     }
 }
@@ -53,23 +50,27 @@ impl<'tree> NewtonProblem<'tree> {
 
     /// Gradient component of the sum of the function, parameterized with the inner pi function.
     #[inline]
-    fn gradient_sum_function(
-        bp_values: &[f64],
-        scales: &[f64],
-        c: f64,
-        d: f64,
-        pi_gradient: fn(f64, f64, f64) -> f64,
-    ) -> f64 {
-        // negative of the actual gradient because we want to find a maximum instead of a minimum.
-        bp_values
-            .iter()
-            .zip(scales)
-            .map(|(&bp, &scale)| {
-                let pi = Self::pi_k(c, d, scale);
+    fn gradient_sum_function(&self, c: f64, d: f64) -> (f64, f64) {
+        let mut gradient_c = 0.0;
+        let mut gradient_d = 0.0;
 
-                DEFAULT_REPLICATES as f64 * pi_gradient(c, d, scale) * (bp - pi) / (pi * (1.0 - pi))
-            })
-            .sum::<f64>()
+        for (&bp, &scale) in self.bp_values.iter().zip(self.scales) {
+            let pi = Self::pi_k(c, d, scale);
+            let scale_root = scale.sqrt();
+            let gradient_core = Self::gradient_core(c, d, scale);
+
+            if pi.abs() < 1E-16 || pi.abs() >= 1.0 {
+                // prevent division by zero and other numerical issues
+                continue;
+            } else {
+                gradient_c += DEFAULT_REPLICATES as f64 * gradient_core / scale_root * (bp - pi)
+                    / (pi * (1.0 - pi));
+                gradient_d += DEFAULT_REPLICATES as f64 * gradient_core * scale_root * (bp - pi)
+                    / (pi * (1.0 - pi));
+            }
+        }
+
+        (gradient_c, gradient_d)
     }
 
     #[inline]
@@ -79,10 +80,18 @@ impl<'tree> NewtonProblem<'tree> {
         let mut hessian_dd = 0.0;
         for (&bp, &scale) in bp_values.iter().zip(scales) {
             let count = DEFAULT_REPLICATES as f64 * bp;
-            let core = Self::hessian_core(c, d, scale, count);
-            hessian_cc += core / scale;
-            hessian_dc += core;
-            hessian_dd += core * scale;
+
+            let pi = Self::pi_k(c, d, scale);
+            if pi.abs() < 1e-16 || pi.abs() >= 1.0 {
+                // prevent division by zero and other numerical issues
+                continue;
+            } else {
+                let core = Self::hessian_core(c, d, scale, count);
+
+                hessian_cc += core / scale;
+                hessian_dc += core;
+                hessian_dd += core * scale;
+            }
         }
 
         (hessian_cc, hessian_dc, hessian_dd)
@@ -98,24 +107,12 @@ impl<'tree> NewtonProblem<'tree> {
         1.0 - cdf(d * scale_root + c / scale_root)
     }
 
-    /// Component of the gradient of [`pi_k`] with respect to the parameter `c`.
-    ///
-    /// [`pi_k`]: Self::pi_k
+    /// The common part of both gradient derivatives
     #[inline(always)]
-    fn gradient_pi_c(c: f64, d: f64, scale: f64) -> f64 {
+    fn gradient_core(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
 
-        -pdf(d * scale_root + c / scale_root) / scale_root
-    }
-
-    /// Component of the gradient of [`pi_k`] with respect to the parameter `d`.
-    ///
-    /// [`pi_k`]: Self::pi_k
-    #[inline(always)]
-    fn gradient_pi_d(c: f64, d: f64, scale: f64) -> f64 {
-        let scale_root = scale.sqrt();
-
-        -pdf(d * scale_root + c / scale_root) * scale_root
+        -pdf(d * scale_root + c / scale_root)
     }
 
     /// The common part of all three hessian derivatives
