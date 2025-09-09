@@ -57,12 +57,13 @@ impl<'tree> NewtonProblem<'tree> {
         for (&bp, &scale) in self.bp_values.iter().zip(self.scales) {
             let pi = Self::pi_k(c, d, scale);
             let scale_root = scale.sqrt();
-            let gradient_core = Self::gradient_core(c, d, scale);
 
             if pi.abs() < 1E-16 || pi.abs() >= 1.0 {
                 // prevent division by zero and other numerical issues
                 continue;
             } else {
+                let gradient_core = Self::gradient_core(c, d, scale);
+
                 gradient_c += DEFAULT_REPLICATES as f64 * gradient_core / scale_root * (bp - pi)
                     / (pi * (1.0 - pi));
                 gradient_d += DEFAULT_REPLICATES as f64 * gradient_core * scale_root * (bp - pi)
