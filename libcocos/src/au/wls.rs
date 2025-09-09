@@ -59,15 +59,15 @@ impl<'tree> WlsProblem<'tree> {
         let mut weight_vector = vec![0.0; self.bp_table.num_scales()].into_boxed_slice();
 
         let mut non_zero_observations = 0;
-        for (i, &bp) in self.bp_table.tree_bp_values(i).iter().enumerate() {
+        for (scale_index, &bp) in self.bp_table.tree_bp_values(i).iter().enumerate() {
             if bp < 1E-16 {
                 // guard against division by zero, both weight and distance is observed
                 // to be zero in those cases
                 continue;
             }
-            observed_distances[i] = Self::compute_distance(bp);
-            let x = pdf(observed_distances[i]);
-            weight_vector[i] = (x * x * DEFAULT_REPLICATES as f64) / ((1.0 - bp) * bp);
+            observed_distances[scale_index] = Self::compute_distance(bp);
+            let x = pdf(observed_distances[scale_index]);
+            weight_vector[scale_index] = (x * x * DEFAULT_REPLICATES as f64) / ((1.0 - bp) * bp);
             non_zero_observations += 1;
         }
 
