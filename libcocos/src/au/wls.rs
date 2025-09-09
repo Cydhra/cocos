@@ -132,7 +132,7 @@ impl<'tree> WlsProblem<'tree> {
 }
 
 /// Solve the WLS instance to obtain values for the curvature and signed distance (in that order).
-pub(super) fn estimate_curv_dist_wls(bp_table: &BpTable) -> Vec<(f64, f64)> {
+pub fn estimate_curv_dist_wls(bp_table: &BpTable) -> Vec<(f64, f64)> {
     let problem = WlsProblem::new(bp_table);
 
     let mut result = Vec::with_capacity(bp_table.num_trees());
