@@ -153,10 +153,10 @@ pub fn estimate_curv_dist_newton<I: IntoIterator<Item = (f64, f64)>>(
                 NewtonProblem::new(bp_values.tree_bp_values(tree_index), bp_values.scales());
 
             let init = Vec2(c, d);
-            let solver = Newton::<f64>::new().with_gamma(0.1).unwrap();
+            let solver = Newton::<f64>::new();
 
             let result = Executor::new(problem, solver)
-                .configure(|state| state.param(init).max_iters(300))
+                .configure(|state| state.param(init).max_iters(30))
                 .run()?;
 
             let Some(&Vec2(c, d)) = result.state().get_best_param() else {
