@@ -119,8 +119,8 @@ impl<'tree> NewtonProblem<'tree> {
         let linear = d * scale_root + c / scale_root;
         let density = pdf(linear);
         density
-            * ((density * (-count + 2.0 * count * pi_k - DEFAULT_REPLICATES as f64 * pi_k_sq)
-                / (pi_k_sq * pi_rev_sq))
+            * (density * (-count + 2.0 * count * pi_k - DEFAULT_REPLICATES as f64 * pi_k_sq)
+                / (pi_k_sq * pi_rev_sq)
                 + linear * (count - DEFAULT_REPLICATES as f64 * pi_k) / (pi_k * (1.0 - pi_k)))
     }
 }
