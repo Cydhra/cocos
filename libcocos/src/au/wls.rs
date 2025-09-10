@@ -5,6 +5,8 @@ use crate::BpTable;
 use crate::au::math::{pdf, quantile};
 use crate::bootstrap::DEFAULT_REPLICATES;
 
+/// Problem instance for the weighted least squares regression that fits curvature and signed
+/// distance to the observed BP values.
 pub(super) struct WlsProblem<'tree> {
     bp_table: &'tree BpTable,
     scale_roots: Box<[f64]>,
@@ -52,8 +54,9 @@ impl<'tree> WlsProblem<'tree> {
     /// and now fit `c` and `d` to `Pr = cdf(d * sqrt(scale) + c / sqrt(scale))`.
     ///
     /// # Return
-    /// Returns a tuple (c, d).
-    fn fit_parameters_to_tree(&self, i: usize) -> (f64, f64) {
+    /// Returns Ok((c, d)) if the regression was computed successfully, or Err((0.0, 0.0)) if there
+    /// is no solution.
+    fn fit_parameters_to_tree(&self, i: usize) -> Result<(f64, f64), (f64, f64)> {
         // compute weights and observed distances
         let mut observed_distances = vec![0.0; self.bp_table.num_scales()].into_boxed_slice();
         let mut weight_vector = vec![0.0; self.bp_table.num_scales()].into_boxed_slice();
@@ -73,7 +76,7 @@ impl<'tree> WlsProblem<'tree> {
 
         // we can't compute estimates if bp is zero.
         if non_zero_observations < 2 {
-            return (0.0, 0.0);
+            return Err((0.0, 0.0));
         }
 
         // compute weighted model matrix
@@ -124,15 +127,32 @@ impl<'tree> WlsProblem<'tree> {
         // c and d. The following is the multiplication `inv(M) * observations`.
 
         let determinant = model_d * model_c - off_diagonal * off_diagonal;
+        if determinant.abs() == 0.0 {
+            return Err((0.0, 0.0));
+        }
+
         let estimate_d = (model_c * observed_d - off_diagonal * observed_c) / determinant;
         let estimate_c = (-off_diagonal * observed_d + model_d * observed_c) / determinant;
 
-        (estimate_c, estimate_d)
+        Ok((estimate_c, estimate_d))
     }
 }
 
-/// Solve the WLS instance to obtain values for the curvature and signed distance (in that order).
-pub fn estimate_curv_dist_wls(bp_table: &BpTable) -> Vec<(f64, f64)> {
+/// Fit curvature (`c`) and signed distance (`d`) parameters to observed bootstrap probabilities
+/// using the Weighted Least Squares method.
+/// The bootstrap values are given in a [`BpTable`] and one pair of parameters is fit per
+/// replicate set (i.e., per tree).
+///
+/// # Return
+/// A vector of `Result<(f64, f64), (f64, f64)>`.
+/// If the regression was calculated successfully, the result is `Ok((c, d))`.
+/// If the regression has no solution, for example because there are not enough BP ratios greater
+/// than zero, an Error with a dummy value is returned.
+/// In this case, the parameters should be estimated using Newton's method with the dummy value
+/// as the initial guess.
+///
+/// [`BpTable`]: BpTable
+pub fn estimate_curv_dist_wls(bp_table: &BpTable) -> Vec<Result<(f64, f64), (f64, f64)>> {
     let problem = WlsProblem::new(bp_table);
 
     let mut result = Vec::with_capacity(bp_table.num_trees());
