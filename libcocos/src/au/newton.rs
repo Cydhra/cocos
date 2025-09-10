@@ -124,7 +124,10 @@ impl<'tree> NewtonProblem<'tree> {
         // is pi_k², we need to mix the factors
         density
             * (density * (-count + 2.0 * count * pi_k - DEFAULT_REPLICATES as f64 * pi_k * pi_k)
-                / (pi_k * (1.0 - pi_k) * pi_k * (1.0 - pi_k))
+                / pi_k
+                / pi_k
+                / (1.0 - pi_k)
+                / (1.0 - pi_k)
                 + linear * (count - DEFAULT_REPLICATES as f64 * pi_k) / (pi_k * (1.0 - pi_k)))
     }
 }
