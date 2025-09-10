@@ -56,18 +56,18 @@ impl<'tree> NewtonProblem<'tree> {
 
         for (&bp, &scale) in self.bp_values.iter().zip(self.scales) {
             let pi = Self::pi_k(c, d, scale);
-            let scale_root = scale.sqrt();
 
-            if pi.abs() < 1E-16 || pi.abs() >= 1.0 {
-                // prevent division by zero and other numerical issues
-                continue;
-            } else {
+            if pi > 0.0 && pi < 1.0 {
+                let scale_root = scale.sqrt();
                 let gradient_core = -pdf(d * scale_root + c / scale_root)
                     * (DEFAULT_REPLICATES as f64 * bp - DEFAULT_REPLICATES as f64 * pi)
                     / (pi * (1.0 - pi));
 
                 gradient_c += gradient_core / scale_root;
                 gradient_d += gradient_core * scale_root;
+            } else {
+                // prevent division by zero and other numerical issues
+                continue;
             }
         }
 
@@ -83,15 +83,15 @@ impl<'tree> NewtonProblem<'tree> {
             let count = DEFAULT_REPLICATES as f64 * bp;
 
             let pi = Self::pi_k(c, d, scale);
-            if pi.abs() < 1e-16 || pi.abs() >= 1.0 {
-                // prevent division by zero and other numerical issues
-                continue;
-            } else {
+            if pi > 0.0 && pi < 1.0 {
                 let core = Self::hessian_core(c, d, scale, count);
 
                 hessian_cc += core / scale;
                 hessian_dc += core;
                 hessian_dd += core * scale;
+            } else {
+                // prevent division by zero and other numerical issues
+                continue;
             }
         }
 
