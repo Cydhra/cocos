@@ -112,15 +112,19 @@ impl<'tree> NewtonProblem<'tree> {
     #[inline(always)]
     fn hessian_core(c: f64, d: f64, scale: f64, count: f64) -> f64 {
         let pi_k = Self::pi_k(c, d, scale);
-        let pi_k_sq = pi_k * pi_k;
-        let pi_rev_sq = (1.0 - pi_k) * (1.0 - pi_k);
 
         let scale_root = scale.sqrt();
         let linear = d * scale_root + c / scale_root;
         let density = pdf(linear);
+
+        // careful with numerical details here:
+        // pi_k * pi_k can become zero, while pi_k is still greater than zero, so we must not
+        // compute X * (pi_k * pi_k) at any point.
+        // The same is true for (1.0 - pi_k), so we must not compute X * (1 - pi_k)², and if X
+        // is pi_k², we need to mix the factors
         density
-            * (density * (-count + 2.0 * count * pi_k - DEFAULT_REPLICATES as f64 * pi_k_sq)
-                / (pi_k_sq * pi_rev_sq)
+            * (density * (-count + 2.0 * count * pi_k - DEFAULT_REPLICATES as f64 * pi_k * pi_k)
+                / (pi_k * (1.0 - pi_k) * pi_k * (1.0 - pi_k))
                 + linear * (count - DEFAULT_REPLICATES as f64 * pi_k) / (pi_k * (1.0 - pi_k)))
     }
 }
