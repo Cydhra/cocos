@@ -62,12 +62,12 @@ impl<'tree> NewtonProblem<'tree> {
                 // prevent division by zero and other numerical issues
                 continue;
             } else {
-                let gradient_core = Self::gradient_core(c, d, scale);
+                let gradient_core = -pdf(d * scale_root + c / scale_root)
+                    * (DEFAULT_REPLICATES as f64 * bp - DEFAULT_REPLICATES as f64 * pi)
+                    / (pi * (1.0 - pi));
 
-                gradient_c += DEFAULT_REPLICATES as f64 * gradient_core / scale_root * (bp - pi)
-                    / (pi * (1.0 - pi));
-                gradient_d += DEFAULT_REPLICATES as f64 * gradient_core * scale_root * (bp - pi)
-                    / (pi * (1.0 - pi));
+                gradient_c += gradient_core / scale_root;
+                gradient_d += gradient_core * scale_root;
             }
         }
 
@@ -106,14 +106,6 @@ impl<'tree> NewtonProblem<'tree> {
         let scale_root = scale.sqrt();
 
         1.0 - cdf(d * scale_root + c / scale_root)
-    }
-
-    /// The common part of both gradient derivatives
-    #[inline(always)]
-    fn gradient_core(c: f64, d: f64, scale: f64) -> f64 {
-        let scale_root = scale.sqrt();
-
-        -pdf(d * scale_root + c / scale_root)
     }
 
     /// The common part of all three hessian derivatives
