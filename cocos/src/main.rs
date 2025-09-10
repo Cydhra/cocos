@@ -2,7 +2,7 @@ use clap::*;
 use libcocos::BpTable;
 use libcocos::au::get_au_value;
 use libcocos::bootstrap::{
-    DEFAULT_FACTORS, bootstrap, calc_bootstrap_proportion, par_bootstrap,
+    DEFAULT_FACTORS, DEFAULT_REPLICATES, bootstrap, calc_bootstrap_proportion, par_bootstrap,
     par_calc_bootstrap_proportion,
 };
 use rand::{RngCore, SeedableRng, rng};
@@ -173,25 +173,27 @@ fn main() {
         println!("Running bootstrap single-threaded");
     }
 
-    let mut bp_table = BpTable::new(Box::new(DEFAULT_FACTORS.clone()), likelihoods.num_trees());
+    let mut bp_table = BpTable::new(Box::new(DEFAULT_FACTORS), likelihoods.num_trees());
     let start = Instant::now();
 
-    for (num_bootstrap, bootstrap_scale) in DEFAULT_FACTORS.iter().enumerate() {
+    for (scale_index, bootstrap_scale) in DEFAULT_FACTORS.iter().enumerate() {
         let replicates = if args.threads == 1 {
-            bootstrap(&mut rng, &likelihoods, 10000, *bootstrap_scale)
+            bootstrap(&mut rng, &likelihoods, DEFAULT_REPLICATES, *bootstrap_scale)
         } else {
-            par_bootstrap(&mut rng, &likelihoods, 10000, *bootstrap_scale)
+            par_bootstrap(&mut rng, &likelihoods, DEFAULT_REPLICATES, *bootstrap_scale)
         };
 
         if args.threads == 1 {
-            calc_bootstrap_proportion(&mut bp_table, &replicates, num_bootstrap);
+            calc_bootstrap_proportion(&mut bp_table, &replicates, scale_index);
         } else {
-            par_calc_bootstrap_proportion(&mut bp_table, &replicates, num_bootstrap);
+            par_calc_bootstrap_proportion(&mut bp_table, &replicates, scale_index);
         }
     }
 
     println!("Finished in {:?}", start.elapsed());
 
     let p_value = get_au_value(&bp_table).unwrap();
-    println!("Estimated AU p-values: {:?}", p_value);
+    let indistinguishable = p_value.iter().filter(|&&v| v >= 0.05).count();
+
+    println!("Tree Set Size: {indistinguishable}");
 }
