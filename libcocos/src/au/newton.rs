@@ -105,7 +105,7 @@ impl<'tree> NewtonProblem<'tree> {
     fn pi_k(c: f64, d: f64, scale: f64) -> f64 {
         let scale_root = scale.sqrt();
 
-        1.0 - cdf(d * scale_root + c / scale_root)
+        cdf(-(d * scale_root + c / scale_root))
     }
 
     /// The common part of all three hessian derivatives
