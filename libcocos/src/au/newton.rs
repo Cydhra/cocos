@@ -157,6 +157,8 @@ impl<'tree> NewtonProblem<'tree> {
 ///
 /// # Parameters
 /// - `bp_values` a table containing all bp values for all trees in the AU test
+/// - `start_params` any iterable that contains a pair of starting parameters for `(c, d)`,
+///   which are used to start the newton optimization.
 ///
 /// # Return
 /// Returns a vector of tuples containing the `c` and `d` value estimates for each tree.
