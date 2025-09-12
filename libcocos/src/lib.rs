@@ -152,6 +152,13 @@ impl BpTable {
         &self.bp_values[self.num_scales() * tree..self.num_scales() * (tree + 1)]
     }
 
+    /// Get access to all BP values for a given scale factor.
+    /// Each tree has one BP value in this iterator, in the order of the trees.
+    pub fn scale_bp_values(&self, scale_index: usize) -> impl Iterator<Item = &f64> + use<'_> {
+        let step = self.num_scales();
+        self.bp_values.iter().skip(scale_index).step_by(step)
+    }
+
     /// Get mutable access to all BP values for a given scale factor.
     /// Each tree has one BP value in this iterator, in the order of the trees.
     pub fn scale_bp_values_mut(&mut self, scale_index: usize) -> impl Iterator<Item = &mut f64> {
