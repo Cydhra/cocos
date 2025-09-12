@@ -190,10 +190,26 @@ fn main() {
         }
     }
 
-    println!("Finished in {:?}", start.elapsed());
+    println!("Finished Bootstrapping in {:?}", start.elapsed());
+    println!(
+        "trees: {}, scales: {}",
+        bp_table.num_trees(),
+        bp_table.scales().len()
+    );
+
+    println!(
+        "First 10 BP values: {:?}",
+        bp_table.scale_bp_values_mut(0).take(10).collect::<Vec<_>>()
+    );
 
     let p_value = get_au_value(&bp_table).unwrap();
     let indistinguishable = p_value.iter().filter(|&&v| v >= 0.05).count();
 
     println!("Tree Set Size: {indistinguishable}");
+
+    println!(
+        "first 10: {:?}",
+        &p_value.iter().take(10).collect::<Vec<_>>()
+    );
+    println!("Total time {:?}", start.elapsed());
 }
