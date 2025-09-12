@@ -10,12 +10,14 @@ use rand_chacha::ChaCha8Rng;
 use rayon::{ThreadPoolBuilder, current_num_threads};
 use std::fmt::{Display, Formatter};
 use std::fs::File;
-use std::io::{BufReader, Read, stdin};
+use std::io::{BufReader, BufWriter, Read, Write, stdin, stdout};
 use std::path::PathBuf;
 use std::process::exit;
 use std::time::Instant;
 
 mod parse;
+
+mod output;
 
 #[derive(Parser, Debug)]
 #[command(version, arg_required_else_help = true)]
@@ -94,6 +96,17 @@ enum Output {
     Stdout,
 }
 
+impl Output {
+    fn as_writer(&self) -> Result<BufWriter<Box<dyn Write>>, std::io::Error> {
+        let write: Box<dyn Write> = match self {
+            Output::IntoFile(path) => Box::new(File::create(path)?),
+            Output::Stdout => Box::new(stdout()),
+        };
+
+        Ok(BufWriter::new(write))
+    }
+}
+
 impl Display for Output {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -168,9 +181,9 @@ fn main() {
                 exit(1);
             });
 
-        println!("Running bootstrap with {} threads", current_num_threads());
+        println!("Running bootstrap with {} threads.", current_num_threads());
     } else {
-        println!("Running bootstrap single-threaded");
+        println!("Running bootstrap single-threaded.");
     }
 
     let mut bp_table = BpTable::new(
@@ -179,6 +192,12 @@ fn main() {
         likelihoods.num_trees(),
     );
     let start = Instant::now();
+
+    println!(
+        "Bootstrapping {} trees at {} scales.",
+        bp_table.num_trees(),
+        bp_table.scales().len()
+    );
 
     for (scale_index, (&bootstrap_scale, &num_replicates)) in DEFAULT_FACTORS
         .iter()
@@ -198,26 +217,26 @@ fn main() {
         }
     }
 
-    println!("Finished Bootstrapping in {:?}", start.elapsed());
-    println!(
-        "trees: {}, scales: {}",
-        bp_table.num_trees(),
-        bp_table.scales().len()
-    );
+    println!("Finished Bootstrapping in {:?}.", start.elapsed());
 
-    println!(
-        "First 10 BP values: {:?}",
-        bp_table.scale_bp_values_mut(0).take(10).collect::<Vec<_>>()
-    );
-
-    let p_value = get_au_value(&bp_table).unwrap();
-    let indistinguishable = p_value.iter().filter(|&&v| v >= 0.05).count();
-
-    println!("Tree Set Size: {indistinguishable}");
-
-    println!(
-        "first 10: {:?}",
-        &p_value.iter().take(10).collect::<Vec<_>>()
-    );
+    let au_values = get_au_value(&bp_table).unwrap();
     println!("Total time {:?}", start.elapsed());
+    println!(
+        "Credible Tree Set Size: {}",
+        au_values.iter().filter(|&&v| v >= 0.05).count()
+    );
+
+    let writer = args.output.as_writer().unwrap_or_else(|e| {
+        eprintln!("Failed to open output file: {}", e);
+        exit(1);
+    });
+
+    output::print_tsv(writer, bp_table.scale_bp_values(5).copied(), au_values).unwrap_or_else(
+        |e| {
+            eprintln!("Failed to write to output file: {}", e);
+            exit(1);
+        },
+    );
+
+    println!("Written output to {}.", args.output)
 }
