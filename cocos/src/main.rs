@@ -173,14 +173,22 @@ fn main() {
         println!("Running bootstrap single-threaded");
     }
 
-    let mut bp_table = BpTable::new(Box::new(DEFAULT_FACTORS), likelihoods.num_trees());
+    let mut bp_table = BpTable::new(
+        Box::new(DEFAULT_FACTORS),
+        Box::new(DEFAULT_REPLICATES),
+        likelihoods.num_trees(),
+    );
     let start = Instant::now();
 
-    for (scale_index, bootstrap_scale) in DEFAULT_FACTORS.iter().enumerate() {
+    for (scale_index, (&bootstrap_scale, &num_replicates)) in DEFAULT_FACTORS
+        .iter()
+        .zip(DEFAULT_REPLICATES.iter())
+        .enumerate()
+    {
         let replicates = if args.threads == 1 {
-            bootstrap(&mut rng, &likelihoods, DEFAULT_REPLICATES, *bootstrap_scale)
+            bootstrap(&mut rng, &likelihoods, num_replicates, bootstrap_scale)
         } else {
-            par_bootstrap(&mut rng, &likelihoods, DEFAULT_REPLICATES, *bootstrap_scale)
+            par_bootstrap(&mut rng, &likelihoods, num_replicates, bootstrap_scale)
         };
 
         if args.threads == 1 {

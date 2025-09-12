@@ -3,7 +3,6 @@
 
 use crate::BpTable;
 use crate::au::math::{pdf, quantile};
-use crate::bootstrap::DEFAULT_REPLICATES;
 
 /// Problem instance for the weighted least squares regression that fits curvature and signed
 /// distance to the observed BP values.
@@ -70,7 +69,8 @@ impl<'tree> WlsProblem<'tree> {
             }
             observed_distances[scale_index] = Self::compute_distance(bp);
             let x = pdf(observed_distances[scale_index]);
-            weight_vector[scale_index] = (x * x * DEFAULT_REPLICATES as f64) / ((1.0 - bp) * bp);
+            weight_vector[scale_index] =
+                (x * x * self.bp_table.num_replicates()[scale_index] as f64) / ((1.0 - bp) * bp);
             non_zero_observations += 1;
         }
 

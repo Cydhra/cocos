@@ -7,7 +7,9 @@ use rand::distr::Uniform;
 
 pub const DEFAULT_FACTORS: [f64; 10] = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4];
 
-pub const DEFAULT_REPLICATES: usize = 10_000;
+pub const DEFAULT_REPLICATES: [usize; 10] = [
+    10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000,
+];
 
 /// Generate a vector of per-site weights, indicating how often each site of an alignment got
 /// selected in bootstrap replication.

@@ -73,16 +73,47 @@ pub type BootstrapReplicates = Box<[Box<[f64]>]>;
 /// A matrix containing one or more BP values per input tree, one for each scale factor in the
 /// multiscale bootstrapping process.
 pub struct BpTable {
+    /// A matrix of bootstrap proportions, where each row contains `R` bootstrap proportions per
+    /// tree and there are `N` rows, where `N` is the number of trees.
     bp_values: Box<[f64]>,
+
+    /// An array of scaling factors. For each factor, each tree generates `B` bootstrap replicates
+    /// with a sequence length equal to the original sequence length multiplied by the factor.
+    /// The number of replicates `B` is stored in [`scales`].
     scales: Box<[f64]>,
+
+    /// An array with the same size as [`scales`], indicating how many bootstrap replicates each
+    /// tree generates per scaling factor.
+    num_replicates: Box<[usize]>,
+
+    /// Number of rows in the [`bp_values`] matrix.
     num_trees: usize,
 }
 
 impl BpTable {
-    pub fn new(scales: Box<[f64]>, num_trees: usize) -> Self {
+    /// Initialize a new empty BP matrix, initialized with the given array of scales and number
+    /// of replicates.
+    /// The matrix can be initialized with the [`scale_bp_values_mut`] iterator access.
+    ///
+    /// # Parameters
+    /// - `scales` The array of scaling factors that were used during bootstrapping. Each tree has
+    ///   one BP value per scaling factor.
+    /// - `num_replicates` The array of replication numbers, i.e., the `i`-th value indicates how
+    ///   many bootstrap replicates were generated for the `i`-th BP value of each tree.
+    /// - `num_tree` for how many trees the matrix is to be generated.
+    ///
+    /// [`scale_bp_values_mut`]: Self::scale_bp_values_mut
+    pub fn new(scales: Box<[f64]>, num_replicates: Box<[usize]>, num_trees: usize) -> Self {
+        assert_eq!(
+            scales.len(),
+            num_replicates.len(),
+            "Each scale needs an associated number of replicates"
+        );
+
         Self {
             bp_values: vec![0.0; num_trees * scales.len()].into_boxed_slice(),
             scales,
+            num_replicates,
             num_trees,
         }
     }
@@ -99,8 +130,23 @@ impl BpTable {
 
     /// Get all resampling scale factors that were used in resampling.
     /// Each tree has one BP value per scale factor.
+    /// There are [`num_scales`] factors in the returned slice.
+    ///
+    /// [`num_scales`]: Self::num_scales
     pub fn scales(&self) -> &[f64] {
         &self.scales
+    }
+
+    /// Get all bootstrap replication numbers, one per scaling factor.
+    /// Each tree has one BP value for scaling factor `i` that was calculated from `n` bootstrap
+    /// replicates where `n = self.num_replicates()[i]`.
+    /// There are [`num_scales`] numbers in the returned slice.
+    ///
+    /// The replication numbers are `usize`, for convenient use as an array index, and since each
+    /// bootstrap replicate needs to be stored at some point, they are constrained to the platform's
+    /// address size anyway.
+    pub fn num_replicates(&self) -> &[usize] {
+        &self.num_replicates
     }
 
     /// Ge tall BP values for the tree at index `tree`.
@@ -113,20 +159,5 @@ impl BpTable {
     pub fn scale_bp_values_mut(&mut self, scale_index: usize) -> impl Iterator<Item = &mut f64> {
         let step = self.num_scales();
         self.bp_values.iter_mut().skip(scale_index).step_by(step)
-    }
-}
-
-impl Index<usize> for BpTable {
-    type Output = [f64];
-
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.bp_values[index * self.num_scales()..(index + 1) * self.num_scales()]
-    }
-}
-
-impl IndexMut<usize> for BpTable {
-    fn index_mut(&mut self, index: usize) -> &mut <Self as Index<usize>>::Output {
-        let scales = self.num_scales();
-        &mut self.bp_values[index * scales..(index + 1) * scales]
     }
 }

@@ -3,13 +3,13 @@
 
 use crate::BpTable;
 use crate::au::math::{Matrix2by2, Vec2, cdf, pdf};
-use crate::bootstrap::DEFAULT_REPLICATES;
 use argmin::core::{Error, Executor, Gradient, Hessian, State};
 use argmin::solver::newton::Newton;
 
 struct NewtonProblem<'tree> {
-    scales: &'tree [f64],
     bp_values: &'tree [f64],
+    scales: &'tree [f64],
+    num_replicates: &'tree [usize],
 }
 
 impl<'tree> Gradient for NewtonProblem<'tree> {
@@ -31,7 +31,7 @@ impl<'tree> Hessian for NewtonProblem<'tree> {
         let &Vec2(c, d) = param;
 
         let (hess_cc, hess_cd, hess_dd) =
-            Self::hessian_sum_function(self.bp_values, self.scales, c, d);
+            Self::hessian_sum_function(self.bp_values, self.scales, self.num_replicates, c, d);
 
         Ok(Matrix2by2(hess_cc, hess_cd, hess_cd, hess_dd))
     }
@@ -44,8 +44,16 @@ impl<'tree> NewtonProblem<'tree> {
     /// For details refer to https://doi.org/10.1080/10635150290069913 Appendix 9.
     ///
     /// [Newton Solver]: argmin::solver::newton::Newton
-    pub fn new(bp_values: &'tree [f64], scales: &'tree [f64]) -> Self {
-        Self { bp_values, scales }
+    pub fn new(
+        bp_values: &'tree [f64],
+        scales: &'tree [f64],
+        num_replicates: &'tree [usize],
+    ) -> Self {
+        Self {
+            bp_values,
+            scales,
+            num_replicates,
+        }
     }
 
     /// Gradient component of the sum of the function, parameterized with the inner pi function.
@@ -54,13 +62,17 @@ impl<'tree> NewtonProblem<'tree> {
         let mut gradient_c = 0.0;
         let mut gradient_d = 0.0;
 
-        for (&bp, &scale) in self.bp_values.iter().zip(self.scales) {
+        for (&bp, (&scale, &num_replicates)) in self
+            .bp_values
+            .iter()
+            .zip(self.scales.iter().zip(self.num_replicates))
+        {
             let pi = Self::pi_k(c, d, scale);
 
             if pi > 0.0 && pi < 1.0 {
                 let scale_root = scale.sqrt();
                 let gradient_core = -pdf(d * scale_root + c / scale_root)
-                    * (DEFAULT_REPLICATES as f64 * bp - DEFAULT_REPLICATES as f64 * pi)
+                    * (num_replicates as f64 * bp - num_replicates as f64 * pi)
                     / (pi * (1.0 - pi));
 
                 gradient_c += gradient_core / scale_root;
@@ -75,16 +87,24 @@ impl<'tree> NewtonProblem<'tree> {
     }
 
     #[inline]
-    fn hessian_sum_function(bp_values: &[f64], scales: &[f64], c: f64, d: f64) -> (f64, f64, f64) {
+    fn hessian_sum_function(
+        bp_values: &[f64],
+        scales: &[f64],
+        replications: &[usize],
+        c: f64,
+        d: f64,
+    ) -> (f64, f64, f64) {
         let mut hessian_cc = 0.0;
         let mut hessian_dc = 0.0;
         let mut hessian_dd = 0.0;
-        for (&bp, &scale) in bp_values.iter().zip(scales) {
-            let count = DEFAULT_REPLICATES as f64 * bp;
+        for (&bp, (&scale, &num_replicates)) in
+            bp_values.iter().zip(scales.iter().zip(replications))
+        {
+            let count = num_replicates as f64 * bp;
 
             let pi = Self::pi_k(c, d, scale);
             if pi > 0.0 && pi < 1.0 {
-                let core = Self::hessian_core(c, d, scale, count);
+                let core = Self::hessian_core(c, d, scale, num_replicates, count);
 
                 hessian_cc += core / scale;
                 hessian_dc += core;
@@ -110,7 +130,7 @@ impl<'tree> NewtonProblem<'tree> {
 
     /// The common part of all three hessian derivatives
     #[inline(always)]
-    fn hessian_core(c: f64, d: f64, scale: f64, count: f64) -> f64 {
+    fn hessian_core(c: f64, d: f64, scale: f64, num_replicates: usize, count: f64) -> f64 {
         let pi_k = Self::pi_k(c, d, scale);
 
         let scale_root = scale.sqrt();
@@ -123,12 +143,12 @@ impl<'tree> NewtonProblem<'tree> {
         // The same is true for (1.0 - pi_k), so we must not compute X * (1 - pi_k)², and if X
         // is pi_k², we need to mix the factors
         density
-            * (density * (-count + 2.0 * count * pi_k - DEFAULT_REPLICATES as f64 * pi_k * pi_k)
+            * (density * (-count + 2.0 * count * pi_k - num_replicates as f64 * pi_k * pi_k)
                 / pi_k
                 / pi_k
                 / (1.0 - pi_k)
                 / (1.0 - pi_k)
-                + linear * (count - DEFAULT_REPLICATES as f64 * pi_k) / (pi_k * (1.0 - pi_k)))
+                + linear * (count - num_replicates as f64 * pi_k) / (pi_k * (1.0 - pi_k)))
     }
 }
 
@@ -149,8 +169,11 @@ pub fn estimate_curv_dist_newton<I: IntoIterator<Item = (f64, f64)>>(
     let cd_vals = (0..bp_values.num_trees())
         .zip(start_params.into_iter())
         .map(|(tree_index, (c, d))| {
-            let problem =
-                NewtonProblem::new(bp_values.tree_bp_values(tree_index), bp_values.scales());
+            let problem = NewtonProblem::new(
+                bp_values.tree_bp_values(tree_index),
+                bp_values.scales(),
+                bp_values.num_replicates(),
+            );
 
             let init = Vec2(c, d);
             let solver = Newton::<f64>::new();
