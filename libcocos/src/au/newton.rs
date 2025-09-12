@@ -141,7 +141,7 @@ impl<'tree> NewtonProblem<'tree> {
         // pi_k * pi_k can become zero, while pi_k is still greater than zero, so we must not
         // compute X * (pi_k * pi_k) at any point.
         // The same is true for (1.0 - pi_k), so we must not compute X * (1 - pi_k)², and if X
-        // is pi_k², we need to mix the factors
+        // is pi_k², we need to be extra careful, doing multiple divisions instead of multiplications
         density
             * (density * (-count + 2.0 * count * pi_k - num_replicates as f64 * pi_k * pi_k)
                 / pi_k
