@@ -1,7 +1,5 @@
 use crate::vectors::dot_prod;
-use crate::{
-    BootstrapReplicates, BpTable, ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods,
-};
+use crate::{BpTable, ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods};
 use rand::Rng;
 use rand::distr::Uniform;
 
@@ -91,7 +89,7 @@ fn bootstrap_slice<R: Rng>(
     num_replicates: usize,
     num_sites: usize,
     replication_factor: f64,
-) -> BootstrapReplicates {
+) -> Box<[Box<[f64]>]> {
     let mut results = Vec::with_capacity(num_replicates);
 
     for _ in 0..num_replicates {
@@ -132,7 +130,7 @@ pub fn bootstrap<R: Rng>(
     likelihoods: &SiteLikelihoodTable,
     num_replicates: usize,
     replication_factor: f64,
-) -> BootstrapReplicates {
+) -> Box<[Box<[f64]>]> {
     assert!(num_replicates > 0, "cannot bootstrap with 0 replicates");
     assert!(
         replication_factor > 0.0,
@@ -151,13 +149,30 @@ pub fn bootstrap<R: Rng>(
     )
 }
 
+/// Generate `num_replicates` bootstrap replicates for each log-likelihood sequence and calculate
+/// their log-likelihood value.
+/// The results are stored in an out-parameter so the multiscale bootstrap can reuse the same
+/// allocation.
+/// The method still needs large scratch-space because the results be efficiently computed in-place,
+/// but reusing the result array already reduces memory load.
+///
+/// # Parameters
+/// - `rng` random number generator state
+/// - `likelihoods` a matrix of site log-likelihoods, one vector of site log-likelihoods per input
+///   tree.
+/// - `num_replicates` how many replicates to generate per tree
+/// - `replication_factor` the ratio between the original alignment length and the length of bootstrap sequences
+///
+/// # Panic
+/// Panics if `num_replicates` is 0, or the `replication_factor` is negative or zero, or the
+/// trees have zero site likelihoods, or if the result array is too small to store all
 #[cfg(feature = "rayon")]
 pub fn par_bootstrap<R: Rng + Clone + Send>(
     rng: &mut R,
     likelihoods: &SiteLikelihoodTable,
     num_replicates: usize,
     replication_factor: f64,
-) -> BootstrapReplicates {
+) -> Box<[Box<[f64]>]> {
     use rayon::current_num_threads;
     use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
     use rayon::slice::ParallelSlice;
@@ -186,7 +201,7 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
                 bootstrap_slice(rng, chunk, num_replicates, num_sites, replication_factor);
             (chunk_index, partial_replicates)
         })
-        .collect::<Vec<_>>();
+        .collect::<Box<_>>();
 
     let mut results = vec![vec![0f64; likelihoods.num_trees()].into_boxed_slice(); num_replicates];
 
@@ -264,7 +279,7 @@ fn count_to_proportion<I: IntoIterator<Item = u32>>(
 /// Calculate the bootstrap proportion of each tree for one or multiple bootstrap tables.
 pub fn calc_bootstrap_proportion(
     bp_table: &mut BpTable,
-    bootstrap_replicates: &BootstrapReplicates,
+    bootstrap_replicates: &[Box<[f64]>],
     scale_index: usize,
 ) {
     let num_replicates = bootstrap_replicates.len();
@@ -276,7 +291,7 @@ pub fn calc_bootstrap_proportion(
 #[cfg(feature = "rayon")]
 pub fn par_calc_bootstrap_proportion(
     bp_table: &mut BpTable,
-    bootstrap_replicates: &BootstrapReplicates,
+    bootstrap_replicates: &[Box<[f64]>],
     num_bootstrap: usize,
 ) {
     use rayon::current_num_threads;

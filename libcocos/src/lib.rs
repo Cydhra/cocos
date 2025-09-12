@@ -68,8 +68,6 @@ pub type SiteLikelihoods = [f64];
 /// length.
 pub type ResamplingWeights = Box<[f64]>;
 
-pub type BootstrapReplicates = Box<[Box<[f64]>]>;
-
 /// A matrix containing one or more BP values per input tree, one for each scale factor in the
 /// multiscale bootstrapping process.
 pub struct BpTable {
