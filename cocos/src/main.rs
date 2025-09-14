@@ -177,7 +177,10 @@ fn main() {
         // use physical CPU count because the code is almost exclusively using the AVX unit, which
         // exists at most once per physical core.
         let threads = num_cpus::get_physical();
-        println!("Limiting parallel execution to {} threads to avoid vector processor oversubscription.", threads);
+        println!(
+            "Limiting parallel execution to {} threads to avoid vector processor oversubscription.",
+            threads
+        );
 
         ThreadPoolBuilder::new()
             .num_threads(threads)

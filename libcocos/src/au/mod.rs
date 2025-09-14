@@ -34,11 +34,9 @@ pub use wls::par_fit_model_wls;
 /// [`BpTable`]: BpTable
 pub fn get_au_value(bp_values: &BpTable) -> Result<Vec<f64>, argmin_math::Error> {
     let params = fit_model_wls(bp_values);
-    let init = params.into_iter().map(|r| {
-        match r {
-            Ok(res) => res,
-            Err(dummy) => dummy,
-        }
+    let init = params.into_iter().map(|r| match r {
+        Ok(res) => res,
+        Err(dummy) => dummy,
     });
 
     let results = fit_model_newton(bp_values, init)?;
@@ -63,14 +61,10 @@ pub fn par_get_au_value(bp_values: &BpTable) -> Result<Vec<f64>, argmin_math::Er
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
     let params = par_fit_model_wls(bp_values);
-    let init = params
-        .into_par_iter()
-        .map(|r| {
-            match r {
-                Ok(res) => res,
-                Err(dummy) => dummy,
-            }
-        });
+    let init = params.into_par_iter().map(|r| match r {
+        Ok(res) => res,
+        Err(dummy) => dummy,
+    });
 
     let results = par_fit_model_newton(bp_values, init)?;
     results.iter().map(|(c, d)| Ok(1.0 - cdf(d - c))).collect()

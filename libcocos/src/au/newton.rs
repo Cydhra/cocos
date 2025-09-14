@@ -167,7 +167,13 @@ impl<'tree> NewtonProblem<'tree> {
 ///
 /// # References
 /// For details refer to https://doi.org/10.1080/10635150290069913, Appendix 9
-pub fn fit_model_to_tree(tree_bp: &[f64], scales: &[f64], replicates: &[usize], c: f64, d: f64) -> Result<(f64, f64), Error> {
+pub fn fit_model_to_tree(
+    tree_bp: &[f64],
+    scales: &[f64],
+    replicates: &[usize],
+    c: f64,
+    d: f64,
+) -> Result<(f64, f64), Error> {
     let problem = NewtonProblem::new(tree_bp, scales, replicates);
 
     let init = Vec2(c, d);
@@ -220,7 +226,7 @@ pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
                 bp_values.scales(),
                 bp_values.num_replicates(),
                 c,
-                d
+                d,
             )
         })
         .collect::<Result<Vec<(f64, f64)>, Error>>()
@@ -253,9 +259,11 @@ pub fn par_fit_model_newton<I>(
     bp_values: &BpTable,
     start_params: I,
 ) -> Result<Vec<(f64, f64)>, Error>
-where I: rayon::iter::IntoParallelIterator<Item = (f64, f64)>,
-      <I as rayon::iter::IntoParallelIterator>::Iter: rayon::iter::IndexedParallelIterator {
-    use rayon::iter::{IntoParallelIterator, IndexedParallelIterator, ParallelIterator};
+where
+    I: rayon::iter::IntoParallelIterator<Item = (f64, f64)>,
+    <I as rayon::iter::IntoParallelIterator>::Iter: rayon::iter::IndexedParallelIterator,
+{
+    use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
     (0..bp_values.num_trees())
         .into_par_iter()
@@ -266,7 +274,7 @@ where I: rayon::iter::IntoParallelIterator<Item = (f64, f64)>,
                 bp_values.scales(),
                 bp_values.num_replicates(),
                 c,
-                d
+                d,
             )
         })
         .collect::<Result<Vec<(f64, f64)>, Error>>()
