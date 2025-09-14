@@ -171,6 +171,7 @@ fn main() {
     // instead of using thread_rng during bootstrapping to ensure all threads use the same seed.
     let seed = args.seed.unwrap_or_else(|| rng().next_u64());
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    println!("Random seed: {}", seed);
 
     if args.threads == 0 {
         // use physical CPU count because the code is almost exclusively using the AVX unit, which
