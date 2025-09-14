@@ -248,8 +248,7 @@ pub fn count_max_replicates(bootstrap_replicates: &[Box<[f64]>], num_trees: usiz
     bp_vector
 }
 
-/// Convert the bootstrap counts to a bootstrap proportion. This includes the continuity correction
-/// implemented in the original `consel` software.
+/// Convert the bootstrap counts to a bootstrap proportion.
 ///
 /// # Parameters
 /// - `bp_table` the bp value table that is being filled with the proportions.
@@ -259,9 +258,6 @@ pub fn count_max_replicates(bootstrap_replicates: &[Box<[f64]>], num_trees: usiz
 ///   bootstrap replicates is converted independently, and this index is used to write the
 ///   bootstrap proportion in the correct entry in each tree's table row.
 /// - `num_replicates` how many replicates were generated for the scaling factor at the given index.
-///
-/// # References
-/// For the correction, see the original [consel source code](https://github.com/shimo-lab/consel/blob/1a532a4fe9e7d4e9101f2bbe64613f3b0cfc6274/src/consel.c#L976):
 fn count_to_proportion<I: IntoIterator<Item = u32>>(
     bp_table: &mut BpTable,
     bp_vector: I,
