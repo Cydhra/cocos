@@ -12,6 +12,7 @@ pub mod vectors;
 /// sites each. The table is used during bootstrap to generate bootstrap replicates of the alignment
 /// quickly.
 #[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SiteLikelihoodTable {
     likelihoods: Box<[f64]>,
     num_trees: usize,
