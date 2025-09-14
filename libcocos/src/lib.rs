@@ -149,9 +149,15 @@ impl BpTable {
         &self.num_replicates
     }
 
-    /// Ge tall BP values for the tree at index `tree`.
+    /// Get all BP values for the tree at index `tree`.
     pub fn tree_bp_values(&self, tree: usize) -> &[f64] {
         &self.bp_values[self.num_scales() * tree..self.num_scales() * (tree + 1)]
+    }
+
+    /// Get mutable access to all BP values for the tree at index `tree`.
+    pub fn tree_bp_values_mut(&mut self, tree: usize) -> &mut [f64] {
+        let num_scales = self.num_scales();
+        &mut self.bp_values[num_scales * tree..num_scales * (tree + 1)]
     }
 
     /// Get access to all BP values for a given scale factor.
