@@ -28,6 +28,16 @@ This generates BP values and AU p-values in `dataset.au.tsv`.
 The random seed can be fixed with `-s SEED`, the number of threads can be set with `-t N`.
 If no thread-number is given, cocos defaults to the number of available cores.
 
+# Lib Crate Features
+The `libcocos` crate has a couple of crate features:
+
+- `rayon` This adds parallel versions of the exposed functions building ontop of rayon's global thread pool.
+- `serde` This adds the `Serialize` and `Deserialize` traits to `BpTable` to allow serializing bootstrap results.
+- `simd` This replaces the scalar dot product with a [`portable_simd`](https://github.com/rust-lang/rust/issues/86656)
+  implementation (nightly only), which compiles to the target platform's preferred vector instructions.
+
+The `cocos` crate uses `simd` and `rayon`, and so compiling it requires the nightly toolchain.
+
 # References
 [1]: Hidetoshi Shimodaira, An Approximately Unbiased Test of Phylogenetic Tree Selection, Systematic Biology, 
 Volume 51, Issue 3, 1 May 2002, Pages 492–508, https://doi.org/10.1080/10635150290069913
