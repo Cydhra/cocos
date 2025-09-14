@@ -2,6 +2,24 @@
 #![warn(missing_docs)]
 #![allow(clippy::inline_always)]
 
+//! This library implements the approximately unbiased test by H. Shimodaira (https://doi.org/10.1080/10635150290069913).
+//! The main contribution is the full parallel implementation of the test, which is gated behind
+//! the crate feature `rayon`.
+//! Furthermore, the crate feature `simd` enables a `portable_simd` vector implementation of the
+//! test, which provides a substantial speed boost (since over 90% of the runtime is spent
+//! in dot products).
+//! Because `portable_simd` is a nightly feature,
+//! the implementation falls back to a scalar implementation on stable.
+//!
+//! Optionally, the library supports `serde` for its two structures [`SiteLikelihoodTable`] and
+//! [`BpTable`].
+//!
+//! The library takes pre-parsed log-likelihood vectors as input ([`SiteLikelihoodTable`])
+//! and can therefore be used to apply the AU test to every selection problem that uses the
+//! RELL bootstrap method (https://doi.org/10.1007/BF02109483).
+//!
+//! A separate binary crate with a CLI is available which applies the test to phylogenetic trees.
+
 use std::ops::{Index, IndexMut};
 
 pub mod au;
