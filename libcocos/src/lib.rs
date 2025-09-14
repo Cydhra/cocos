@@ -1,4 +1,6 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
+#![warn(missing_docs)]
+#![allow(clippy::inline_always)]
 
 use std::ops::{Index, IndexMut};
 
