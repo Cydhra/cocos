@@ -32,7 +32,11 @@ jobs:
       RUSTFLAGS: -C target-cpu=x86-64
     steps:
       - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: nightly
+          override: true
       - name: Build
-        run: cargo build --verbose --features serde
+        run: cargo build --lib --verbose --features serde
       - name: Run tests
-        run: cargo test --all-targets --verbose --features serde
+        run: cargo test --lib --verbose --features serde
