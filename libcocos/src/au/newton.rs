@@ -163,8 +163,13 @@ impl<'tree> NewtonProblem<'tree> {
 /// # Return
 /// Returns a vector of tuples containing the `c` and `d` value estimates for each tree.
 ///
-/// For details refer to https://doi.org/10.1080/10635150290069913.
-pub fn estimate_curv_dist_newton<I: IntoIterator<Item = (f64, f64)>>(
+/// # References
+/// For details refer to https://doi.org/10.1080/10635150290069913, Appendix 9
+///
+/// See also [`fit_model_wls`].
+///
+/// [`fit_model_wls`]: super::fit_model_wls
+pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
     bp_values: &BpTable,
     start_params: I,
 ) -> Result<Vec<(f64, f64)>, Error> {

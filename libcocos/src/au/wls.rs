@@ -151,8 +151,14 @@ impl<'tree> WlsProblem<'tree> {
 /// In this case, the parameters should be estimated using Newton's method with the dummy value
 /// as the initial guess.
 ///
+/// # References
+/// For details refer to https://doi.org/10.1080/10635150290069913.
+///
+/// See also [`fit_model_newton`].
+///
 /// [`BpTable`]: BpTable
-pub fn estimate_curv_dist_wls(bp_table: &BpTable) -> Vec<Result<(f64, f64), (f64, f64)>> {
+/// [`fit_model_newton`]: super::fit_model_newton
+pub fn fit_model_wls(bp_table: &BpTable) -> Vec<Result<(f64, f64), (f64, f64)>> {
     let problem = WlsProblem::new(bp_table);
 
     let mut result = Vec::with_capacity(bp_table.num_trees());
