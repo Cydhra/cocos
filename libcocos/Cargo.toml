@@ -15,5 +15,8 @@ statrs = "0.18.0"
 # parallelization
 rayon = { version = "1.11.0", optional = true }
 
+# serialization
+serde = { version = "1.0.221", optional = true }
+
 [features]
 simd = []

@@ -70,6 +70,8 @@ pub type ResamplingWeights = Box<[f64]>;
 
 /// A matrix containing one or more BP values per input tree, one for each scale factor in the
 /// multiscale bootstrapping process.
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BpTable {
     /// A matrix of bootstrap proportions, where each row contains `R` bootstrap proportions per
     /// tree and there are `N` rows, where `N` is the number of trees.
