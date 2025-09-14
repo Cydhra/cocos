@@ -212,8 +212,8 @@ pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
     bp_values: &BpTable,
     start_params: I,
 ) -> Result<Vec<(f64, f64)>, Error> {
-    let cd_vals = (0..bp_values.num_trees())
-        .zip(start_params.into_iter())
+    (0..bp_values.num_trees())
+        .zip(start_params)
         .map(|(tree_index, (c, d))| {
             fit_model_to_tree(
                 bp_values.tree_bp_values(tree_index),
@@ -223,9 +223,7 @@ pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
                 d
             )
         })
-        .collect::<Result<Vec<(f64, f64)>, Error>>();
-
-    cd_vals
+        .collect::<Result<Vec<(f64, f64)>, Error>>()
 }
 
 /// Estimate the parameters `d` (signed distance) and `c` (a curvature constant) which are used
@@ -259,7 +257,7 @@ where I: rayon::iter::IntoParallelIterator<Item = (f64, f64)>,
       <I as rayon::iter::IntoParallelIterator>::Iter: rayon::iter::IndexedParallelIterator {
     use rayon::iter::{IntoParallelIterator, IndexedParallelIterator, ParallelIterator};
 
-    let cd_vals = (0..bp_values.num_trees())
+    (0..bp_values.num_trees())
         .into_par_iter()
         .zip(start_params)
         .map(|(tree_index, (c, d))| {
@@ -271,7 +269,5 @@ where I: rayon::iter::IntoParallelIterator<Item = (f64, f64)>,
                 d
             )
         })
-        .collect::<Result<Vec<(f64, f64)>, Error>>();
-
-    cd_vals
+        .collect::<Result<Vec<(f64, f64)>, Error>>()
 }

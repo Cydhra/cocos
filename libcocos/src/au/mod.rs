@@ -35,10 +35,9 @@ pub use wls::par_fit_model_wls;
 pub fn get_au_value(bp_values: &BpTable) -> Result<Vec<f64>, argmin_math::Error> {
     let params = fit_model_wls(bp_values);
     let init = params.into_iter().map(|r| {
-        if r.is_ok() {
-            r.unwrap()
-        } else {
-            r.unwrap_err()
+        match r {
+            Ok(res) => res,
+            Err(dummy) => dummy,
         }
     });
 
@@ -67,10 +66,9 @@ pub fn par_get_au_value(bp_values: &BpTable) -> Result<Vec<f64>, argmin_math::Er
     let init = params
         .into_par_iter()
         .map(|r| {
-            if r.is_ok() {
-                r.unwrap()
-            } else {
-                r.unwrap_err()
+            match r {
+                Ok(res) => res,
+                Err(dummy) => dummy,
             }
         });
 

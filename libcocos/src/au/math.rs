@@ -75,6 +75,6 @@ pub(crate) fn pdf(x: f64) -> f64 {
 // The probability covered by the quantile given as `x` of the standard normal distribution.
 #[inline(always)]
 pub(crate) fn quantile(x: f64) -> f64 {
-    debug_assert!(0.0 <= x && x <= 1.0, "Invalid quantile");
+    debug_assert!((0.0..=1.0).contains(&x), "Invalid quantile");
     -(std::f64::consts::SQRT_2 * erf::erfc_inv(2.0 * x))
 }

@@ -57,7 +57,7 @@ pub fn parse_puzzle<R: Read>(mut reader: BufReader<R>) -> anyhow::Result<SiteLik
                     )
                 })?
                 .iter()
-                .zip(result.index_mut(tree_id as usize))
+                .zip(result.index_mut(tree_id))
                 .for_each(|(site_lh, result)| *result = *site_lh);
         } else {
             anyhow::bail!("Empty record where tree record was expected.");

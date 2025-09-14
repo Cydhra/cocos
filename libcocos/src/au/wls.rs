@@ -191,12 +191,10 @@ pub fn par_fit_model_wls(bp_table: &BpTable) -> Vec<Result<(f64, f64), (f64, f64
 
     let problem = WlsProblem::new(bp_table);
 
-    let result = (0..bp_table.num_trees())
+    (0..bp_table.num_trees())
         .into_par_iter()
         .map(|tree| {
             problem.fit_parameters_to_tree(tree)
         })
-        .collect();
-
-    result
+        .collect()
 }

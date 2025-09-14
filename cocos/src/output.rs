@@ -7,10 +7,10 @@ where
     I2: IntoIterator<Item = f64>,
     W: Write,
 {
-    write!(output, "BP\tAU\n")?;
+    writeln!(output, "BP\tAU")?;
 
     for (bp, au) in bp.into_iter().zip(au.into_iter()) {
-        write!(output, "{}\t{}\n", bp, au)?;
+        writeln!(output, "{}\t{}", bp, au)?;
     }
 
     Ok(())
