@@ -1,3 +1,15 @@
+//! This module implements the necessary numerical algorithms to estimate the signed distance `d`
+//! and the curvature `c` for the log-likelihood regions of all trees, which are in turn used to
+//! estimate the AU p-value for each tree.
+//!
+//! The most convenient method to estimate p-values for a [`BpTable`], is calling
+//! [`get_au_value`], which will return a p-value for each tree in the table.
+//! When using the `rayon` feature, the corresponding function is called [`par_get_au_value`]
+//!
+//! [`BpTable`]: crate::BpTable
+//! [`get_au_value`]: get_au_value
+//! [`par_get_au_value`]: par_get_au_value
+
 use crate::BpTable;
 
 mod math;
