@@ -153,12 +153,50 @@ impl<'tree> NewtonProblem<'tree> {
 }
 
 /// Estimate the parameters `d` (signed distance) and `c` (a curvature constant) which are used
-/// in the AU p-value estimation using the Newton-Raphson method.
+/// in the AU p-value estimation using the Newton-Raphson method for a single tree.
+///
+/// # Parameters
+/// - `tree_bp` all BP values for the tree, one for each bootstrap scaling factor
+/// - `scales` the bootstrap scaling factors
+/// - `replicates` the number of bootstrap replicates for each scaling factor
+/// - `c` the initial value for c
+/// - `d` the initial value for d
+///
+/// # Return
+/// Returns a tuple containing the `c` and `d` value estimates for the tree.
+///
+/// # References
+/// For details refer to https://doi.org/10.1080/10635150290069913, Appendix 9
+pub fn fit_model_to_tree(tree_bp: &[f64], scales: &[f64], replicates: &[usize], c: f64, d: f64) -> Result<(f64, f64), Error> {
+    let problem = NewtonProblem::new(tree_bp, scales, replicates);
+
+    let init = Vec2(c, d);
+    let solver = Newton::<f64>::new();
+
+    let result = Executor::new(problem, solver)
+        .configure(|state| state.param(init).max_iters(30))
+        .run()?;
+
+    let Some(&Vec2(c, d)) = result.state().get_best_param() else {
+        panic!("solver returned None")
+    };
+
+    Ok((c, d))
+}
+
+/// Estimate the parameters `d` (signed distance) and `c` (a curvature constant) which are used
+/// in the AU p-value estimation using the Newton-Raphson method for many trees.
 ///
 /// # Parameters
 /// - `bp_values` a table containing all bp values for all trees in the AU test
 /// - `start_params` any iterable that contains a pair of starting parameters for `(c, d)`,
 ///   which are used to start the newton optimization.
+///
+/// # Parallelization
+/// A parallel version of this function is available with the `rayon` feature as
+/// [`par_fit_model_newton`].
+/// Note that this step is so fast that parallelization is usually worth it only at several
+/// thousand trees.
 ///
 /// # Return
 /// Returns a vector of tuples containing the `c` and `d` value estimates for each tree.
@@ -168,6 +206,7 @@ impl<'tree> NewtonProblem<'tree> {
 ///
 /// See also [`fit_model_wls`].
 ///
+/// [`par_fit_model_newton`]: par_fit_model_newton
 /// [`fit_model_wls`]: super::fit_model_wls
 pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
     bp_values: &BpTable,
@@ -176,24 +215,61 @@ pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
     let cd_vals = (0..bp_values.num_trees())
         .zip(start_params.into_iter())
         .map(|(tree_index, (c, d))| {
-            let problem = NewtonProblem::new(
+            fit_model_to_tree(
                 bp_values.tree_bp_values(tree_index),
                 bp_values.scales(),
                 bp_values.num_replicates(),
-            );
+                c,
+                d
+            )
+        })
+        .collect::<Result<Vec<(f64, f64)>, Error>>();
 
-            let init = Vec2(c, d);
-            let solver = Newton::<f64>::new();
+    cd_vals
+}
 
-            let result = Executor::new(problem, solver)
-                .configure(|state| state.param(init).max_iters(30))
-                .run()?;
+/// Estimate the parameters `d` (signed distance) and `c` (a curvature constant) which are used
+/// in the AU p-value estimation using the Newton-Raphson method for many trees in parallel.
+/// Note that this step is so fast that parallelization is usually worth it only at several
+/// thousand trees.
+///
+/// # Parameters
+/// - `bp_values` a table containing all bp values for all trees in the AU test
+/// - `start_params` any iterable that contains a pair of starting parameters for `(c, d)`,
+///   which are used to start the newton optimization.
+///
+/// # Return
+/// Returns a vector of tuples containing the `c` and `d` value estimates for each tree.
+///
+/// # Parallelization
+/// This method uses the global rayon thread pool.
+///
+/// # References
+/// For details refer to https://doi.org/10.1080/10635150290069913, Appendix 9
+///
+/// See also [`par_fit_model_wls`].
+///
+/// [`par_fit_model_wls`]: super::par_fit_model_wls
+#[cfg(feature = "rayon")]
+pub fn par_fit_model_newton<I>(
+    bp_values: &BpTable,
+    start_params: I,
+) -> Result<Vec<(f64, f64)>, Error>
+where I: rayon::iter::IntoParallelIterator<Item = (f64, f64)>,
+      <I as rayon::iter::IntoParallelIterator>::Iter: rayon::iter::IndexedParallelIterator {
+    use rayon::iter::{IntoParallelIterator, IndexedParallelIterator, ParallelIterator};
 
-            let Some(&Vec2(c, d)) = result.state().get_best_param() else {
-                panic!("solver returned None")
-            };
-
-            Ok((c, d))
+    let cd_vals = (0..bp_values.num_trees())
+        .into_par_iter()
+        .zip(start_params)
+        .map(|(tree_index, (c, d))| {
+            fit_model_to_tree(
+                bp_values.tree_bp_values(tree_index),
+                bp_values.scales(),
+                bp_values.num_replicates(),
+                c,
+                d
+            )
         })
         .collect::<Result<Vec<(f64, f64)>, Error>>();
 

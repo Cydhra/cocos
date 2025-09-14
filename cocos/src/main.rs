@@ -1,6 +1,6 @@
 use clap::*;
 use libcocos::BpTable;
-use libcocos::au::get_au_value;
+use libcocos::au::{get_au_value, par_get_au_value};
 use libcocos::bootstrap::{
     DEFAULT_FACTORS, DEFAULT_REPLICATES, bootstrap, calc_bootstrap_proportion, par_bootstrap,
     par_calc_bootstrap_proportion,
@@ -219,7 +219,14 @@ fn main() {
 
     println!("Finished Bootstrapping in {:?}.", start.elapsed());
 
-    let au_values = get_au_value(&bp_table).unwrap();
+    let au_values = if bp_table.num_trees() >= 1000 {
+        println!("Estimating necessary parameters in parallel...");
+        par_get_au_value(&bp_table).unwrap()
+    } else {
+        println!("Not enough trees. Estimating necessary parameters sequentially...");
+        get_au_value(&bp_table).unwrap()
+    };
+
     println!("Total time {:?}", start.elapsed());
     println!(
         "Credible Tree Set Size: {}",

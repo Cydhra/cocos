@@ -143,6 +143,9 @@ impl<'tree> WlsProblem<'tree> {
 /// The bootstrap values are given in a [`BpTable`] and one pair of parameters is fit per
 /// replicate set (i.e., per tree).
 ///
+/// # Parameters
+/// - `bp_table` The table of the BP values at all scales for each tree.
+///
 /// # Return
 /// A vector of `Result<(f64, f64), (f64, f64)>`.
 /// If the regression was calculated successfully, the result is `Ok((c, d))`.
@@ -150,6 +153,11 @@ impl<'tree> WlsProblem<'tree> {
 /// than zero, an Error with a dummy value is returned.
 /// In this case, the parameters should be estimated using Newton's method with the dummy value
 /// as the initial guess.
+///
+/// # Parallel Fitting
+/// A parallel version of this function is available with the `rayon` feature.
+/// Note that this step is so fast that parallelization is usually worth it only at several
+/// thousand trees.
 ///
 /// # References
 /// For details refer to https://doi.org/10.1080/10635150290069913.
@@ -165,6 +173,30 @@ pub fn fit_model_wls(bp_table: &BpTable) -> Vec<Result<(f64, f64), (f64, f64)>> 
     for tree in 0..bp_table.num_trees() {
         result.push(problem.fit_parameters_to_tree(tree));
     }
+
+    result
+}
+
+/// Fit curvature (`c`) and signed distance (`d`) parameters to observed bootstrap probabilities
+/// using the Weighted Least Squares method in parallel.
+/// Note that this step is so fast that parallelization is usually worth it only at several
+/// thousand trees.
+///
+/// For a full explanation, see [`fit_model_wls`].
+///
+/// [``fit_model_wls`]: fit_model_wls
+#[cfg(feature = "rayon")]
+pub fn par_fit_model_wls(bp_table: &BpTable) -> Vec<Result<(f64, f64), (f64, f64)>> {
+    use rayon::iter::{IntoParallelIterator, ParallelIterator};
+
+    let problem = WlsProblem::new(bp_table);
+
+    let result = (0..bp_table.num_trees())
+        .into_par_iter()
+        .map(|tree| {
+            problem.fit_parameters_to_tree(tree)
+        })
+        .collect();
 
     result
 }
