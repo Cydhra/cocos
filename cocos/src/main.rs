@@ -172,7 +172,20 @@ fn main() {
     let seed = args.seed.unwrap_or_else(|| rng().next_u64());
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
-    if args.threads != 1 {
+    if args.threads == 0 {
+        // use physical CPU count because the code is almost exclusively using the AVX unit, which
+        // exists at most once per physical core.
+        let threads = num_cpus::get_physical();
+        println!("Limiting parallel execution to {} threads to avoid vector processor oversubscription.", threads);
+
+        ThreadPoolBuilder::new()
+            .num_threads(threads)
+            .build_global()
+            .unwrap_or_else(|e| {
+                eprintln!("Failed to build thread pool: {}", e);
+                exit(1);
+            });
+    } else if args.threads != 1 {
         ThreadPoolBuilder::new()
             .num_threads(args.threads)
             .build_global()
@@ -180,10 +193,6 @@ fn main() {
                 eprintln!("Failed to build thread pool: {}", e);
                 exit(1);
             });
-
-        println!("Running bootstrap with {} threads.", current_num_threads());
-    } else {
-        println!("Running bootstrap single-threaded.");
     }
 
     let mut bp_table = BpTable::new(
@@ -194,9 +203,10 @@ fn main() {
     let start = Instant::now();
 
     println!(
-        "Bootstrapping {} trees at {} scales.",
+        "Bootstrapping {} trees at {} scales with {} threads.",
         bp_table.num_trees(),
-        bp_table.scales().len()
+        bp_table.scales().len(),
+        current_num_threads(),
     );
 
     for (scale_index, (&bootstrap_scale, &num_replicates)) in DEFAULT_FACTORS
