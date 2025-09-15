@@ -310,3 +310,30 @@ pub fn par_calc_bootstrap_proportion(
 
     count_to_proportion(bp_table, bp_vector, num_bootstrap, num_replicates);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::rng;
+
+    #[test]
+    fn test_selection_weight() {
+        // test whether the selection vector have the same length as the original vector and sum
+        // to the rescaled vector length (the sum is the number of sites selected for the rescaled
+        // vector).
+
+        let mut rng = rng();
+
+        let v = generate_selection_vector(&mut rng, 100, 1.0);
+        assert_eq!(v.len(), 100);
+        assert_eq!(v.iter().sum::<f64>(), 100.0);
+
+        let v = generate_selection_vector(&mut rng, 100, 2.0);
+        assert_eq!(v.len(), 100);
+        assert_eq!(v.iter().sum::<f64>(), 200.0);
+
+        let v = generate_selection_vector(&mut rng, 200, 0.5);
+        assert_eq!(v.len(), 200);
+        assert_eq!(v.iter().sum::<f64>(), 100.0);
+    }
+}
