@@ -69,7 +69,7 @@ pub fn parse_puzzle<R: Read>(mut reader: BufReader<R>) -> anyhow::Result<SiteLik
 
 #[cfg(test)]
 mod tests {
-    use crate::parse::parse_puzzle;
+    use super::*;
     use std::io::{BufReader, Cursor};
 
     #[test]

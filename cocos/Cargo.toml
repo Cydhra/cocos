@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 libcocos = { path = "../libcocos", features = ["rayon", "simd"] }
+cocos-parse = { path = "../cocos-parse" }
 rayon = "1.11.0"
 rand = "0.9.2"
 anyhow = "1.0.99"

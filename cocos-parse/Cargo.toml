@@ -1,0 +1,8 @@
+[package]
+name = "cocos-parse"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+libcocos = { path = "../libcocos" }
+anyhow = "1.0.99"

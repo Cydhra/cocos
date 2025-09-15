@@ -15,8 +15,6 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::time::Instant;
 
-mod parse;
-
 mod output;
 
 #[derive(Parser, Debug)]
@@ -160,7 +158,7 @@ fn main() {
     });
 
     let likelihoods = match args.format {
-        Format::Puzzle => parse::parse_puzzle(input),
+        Format::Puzzle => cocos_parse::parse_puzzle(input),
     }
     .unwrap_or_else(|e| {
         eprintln!("Failed to parse input: {}", e);
