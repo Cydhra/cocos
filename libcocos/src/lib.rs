@@ -20,6 +20,11 @@
 //!
 //! A separate binary crate with a CLI is available which applies the test to phylogenetic trees.
 
+use crate::au::{get_au_value, par_get_au_value};
+use crate::bootstrap::{
+    bootstrap, calc_bootstrap_proportion, par_bootstrap, par_calc_bootstrap_proportion,
+};
+use rand::Rng;
 use std::ops::{Index, IndexMut};
 
 pub mod au;
@@ -194,4 +199,78 @@ impl BpTable {
         let step = self.num_scales();
         self.bp_values.iter_mut().skip(scale_index).step_by(step)
     }
+}
+
+/// Calculate the AU p-values for a given table of log-likelihoods using the RELL bootstrap method
+/// and subsequent AU test.
+/// This is a convenience method to call bootstrapping and p-value calculation in one call.
+///
+/// # Parameters
+/// - `rng` the random number generator to use for bootstrapping
+/// - `likelihoods` the [`SiteLikelihoodTable`] that contains the log-likelihoods to resample
+/// - `bootstrap_scales` a slice containing the scaling factors for the multiscale bootstrap
+/// - `bootstrap_replicates` a slice containing a number for each scale in `bootstrap_scales`
+///   indicating how many replicates to generate for that scale.
+///
+/// # Return
+/// Returns a vector of p-values with one p-value for each tree in the input table, or an error
+/// if at least one of the calculations failed.
+pub fn calc_au_values<R>(
+    rng: &mut R,
+    likelihoods: &SiteLikelihoodTable,
+    bootstrap_scales: &[f64],
+    bootstrap_replicates: &[usize],
+) -> Result<Vec<f64>, argmin_math::Error>
+where
+    R: Rng,
+{
+    let mut bp_table = BpTable::new(
+        bootstrap_scales.to_vec().into_boxed_slice(),
+        bootstrap_replicates.to_vec().into_boxed_slice(),
+        likelihoods.num_trees(),
+    );
+
+    for (scale_index, (&bootstrap_scale, &num_replicates)) in bootstrap_scales
+        .iter()
+        .zip(bootstrap_replicates.iter())
+        .enumerate()
+    {
+        let replicates = bootstrap(rng, likelihoods, num_replicates, bootstrap_scale);
+        calc_bootstrap_proportion(&mut bp_table, &replicates, scale_index);
+    }
+
+    get_au_value(&bp_table)
+}
+
+/// Calculate the AU p-values for a given table of log-likelihoods using the RELL bootstrap method
+/// and subsequent AU test in parallel.
+/// This is a convenience method to call bootstrapping and p-value calculation in one call.
+///
+/// For full documentation refer to [`calc_au_values`]
+#[cfg(feature = "rayon")]
+pub fn par_calc_au_values<R>(
+    rng: &mut R,
+    likelihoods: &SiteLikelihoodTable,
+    bootstrap_scales: &[f64],
+    bootstrap_replicates: &[usize],
+) -> Result<Vec<f64>, argmin_math::Error>
+where
+    R: Rng + Clone + Send,
+{
+    let mut bp_table = BpTable::new(
+        bootstrap_scales.to_vec().into_boxed_slice(),
+        bootstrap_replicates.to_vec().into_boxed_slice(),
+        likelihoods.num_trees(),
+    );
+
+    for (scale_index, (&bootstrap_scale, &num_replicates)) in bootstrap_scales
+        .iter()
+        .zip(bootstrap_replicates.iter())
+        .enumerate()
+    {
+        let replicates = par_bootstrap(rng, likelihoods, num_replicates, bootstrap_scale);
+        par_calc_bootstrap_proportion(&mut bp_table, &replicates, scale_index);
+    }
+
+    par_get_au_value(&bp_table)
 }
