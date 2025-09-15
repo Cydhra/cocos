@@ -215,7 +215,7 @@ impl BpTable {
 /// # Return
 /// Returns a vector of p-values with one p-value for each tree in the input table, or an error
 /// if at least one of the calculations failed.
-pub fn calc_au_values<R>(
+pub fn au_test<R>(
     rng: &mut R,
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
@@ -246,9 +246,9 @@ where
 /// and subsequent AU test in parallel.
 /// This is a convenience method to call bootstrapping and p-value calculation in one call.
 ///
-/// For full documentation refer to [`calc_au_values`]
+/// For full documentation refer to [`au_test`]
 #[cfg(feature = "rayon")]
-pub fn par_calc_au_values<R>(
+pub fn par_au_test<R>(
     rng: &mut R,
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
