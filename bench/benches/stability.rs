@@ -18,7 +18,7 @@ fn main() -> anyhow::Result<()> {
         let p_values = au_test(&site_lh)?;
 
         for i in 0..NUM_PERMUTATIONS {
-            println!("Shuffling site-likelihoods {i}{NUM_PERMUTATIONS}...");
+            println!("Shuffling site-likelihoods {}/{NUM_PERMUTATIONS}...", i + 1);
             // for reproducibility of the results, we fix the seed
             let mut rng = ChaCha8Rng::from_seed([i as u8; 32]);
             let mut permutation = (0..site_lh.num_sites()).collect::<Vec<_>>();
