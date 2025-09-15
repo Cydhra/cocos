@@ -20,10 +20,8 @@
 //!
 //! A separate binary crate with a CLI is available which applies the test to phylogenetic trees.
 
-use crate::au::{get_au_value, par_get_au_value};
-use crate::bootstrap::{
-    bootstrap, calc_bootstrap_proportion, par_bootstrap, par_calc_bootstrap_proportion,
-};
+use crate::au::get_au_value;
+use crate::bootstrap::{bootstrap, calc_bootstrap_proportion};
 use rand::Rng;
 use std::ops::{Index, IndexMut};
 
@@ -257,6 +255,9 @@ pub fn par_au_test<R>(
 where
     R: Rng + Clone + Send,
 {
+    use au::par_get_au_value;
+    use bootstrap::{par_bootstrap, par_calc_bootstrap_proportion};
+
     let mut bp_table = BpTable::new(
         bootstrap_scales.to_vec().into_boxed_slice(),
         bootstrap_replicates.to_vec().into_boxed_slice(),
