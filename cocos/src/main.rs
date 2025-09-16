@@ -17,6 +17,13 @@ use std::time::Instant;
 
 mod output;
 
+// only use eprintln to log, so stdout can be used for data output
+macro_rules! log {
+    ($($rest:tt)*) => {
+        std::eprintln!($($rest)*)
+    }
+}
+
 #[derive(Parser, Debug)]
 #[command(version, arg_required_else_help = true)]
 struct CliArgs {
@@ -153,7 +160,7 @@ fn main() {
     let args = CliArgs::parse();
 
     let input = args.input.as_reader().unwrap_or_else(|e| {
-        eprintln!("Failed to read input: {}", e);
+        log!("Failed to read input: {}", e);
         exit(1);
     });
 
@@ -161,7 +168,7 @@ fn main() {
         Format::Puzzle => cocos_parse::parse_puzzle(input),
     }
     .unwrap_or_else(|e| {
-        eprintln!("Failed to parse input: {}", e);
+        log!("Failed to parse input: {}", e);
         exit(1);
     });
 
@@ -169,13 +176,13 @@ fn main() {
     // instead of using thread_rng during bootstrapping to ensure all threads use the same seed.
     let seed = args.seed.unwrap_or_else(|| rng().next_u64());
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
-    println!("Random seed: {}", seed);
+    log!("Random seed: {}", seed);
 
     if args.threads == 0 {
         // use physical CPU count because the code is almost exclusively using the AVX unit, which
         // exists at most once per physical core.
         let threads = num_cpus::get_physical();
-        println!(
+        log!(
             "Limiting parallel execution to {} threads to avoid vector processor oversubscription.",
             threads
         );
@@ -184,7 +191,7 @@ fn main() {
             .num_threads(threads)
             .build_global()
             .unwrap_or_else(|e| {
-                eprintln!("Failed to build thread pool: {}", e);
+                log!("Failed to build thread pool: {}", e);
                 exit(1);
             });
     } else if args.threads != 1 {
@@ -192,7 +199,7 @@ fn main() {
             .num_threads(args.threads)
             .build_global()
             .unwrap_or_else(|e| {
-                eprintln!("Failed to build thread pool: {}", e);
+                log!("Failed to build thread pool: {}", e);
                 exit(1);
             });
     }
@@ -204,7 +211,7 @@ fn main() {
     );
     let start = Instant::now();
 
-    println!(
+    log!(
         "Bootstrapping {} trees at {} scales with {} threads.",
         bp_table.num_trees(),
         bp_table.scales().len(),
@@ -229,33 +236,33 @@ fn main() {
         }
     }
 
-    println!("Finished Bootstrapping in {:?}.", start.elapsed());
+    log!("Finished Bootstrapping in {:?}.", start.elapsed());
 
     let au_values = if bp_table.num_trees() >= 1000 {
-        println!("Estimating necessary parameters in parallel...");
+        log!("Estimating necessary parameters in parallel...");
         par_get_au_value(&bp_table).unwrap()
     } else {
-        println!("Not enough trees. Estimating necessary parameters sequentially...");
+        log!("Not enough trees. Estimating necessary parameters sequentially...");
         get_au_value(&bp_table).unwrap()
     };
 
-    println!("Total time {:?}", start.elapsed());
-    println!(
+    log!("Total time {:?}", start.elapsed());
+    log!(
         "Credible Tree Set Size: {}",
         au_values.iter().filter(|&&v| v >= 0.05).count()
     );
 
     let writer = args.output.as_writer().unwrap_or_else(|e| {
-        eprintln!("Failed to open output file: {}", e);
+        log!("Failed to open output file: {}", e);
         exit(1);
     });
 
     output::print_tsv(writer, bp_table.scale_bp_values(5).copied(), au_values).unwrap_or_else(
         |e| {
-            eprintln!("Failed to write to output file: {}", e);
+            log!("Failed to write to output file: {}", e);
             exit(1);
         },
     );
 
-    println!("Written output to {}.", args.output)
+    log!("Written output to {}.", args.output)
 }
