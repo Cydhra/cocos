@@ -7,3 +7,6 @@ target/
 # Workspace
 run/*
 !run/.gitkeep
+
+bench/scripts/scratch
+bench/scripts/consel
