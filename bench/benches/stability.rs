@@ -5,7 +5,7 @@ use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 
-const PATHS: &[&str] = &["data/flat-phylo.siteLH"];
+const PATHS: &[&str] = &["data/flat-phylo.siteLH", "data/medium.siteLH"];
 
 const NUM_PERMUTATIONS: usize = 5;
 
