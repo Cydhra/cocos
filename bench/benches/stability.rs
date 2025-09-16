@@ -1,13 +1,13 @@
 use bench::{load_from_path, resample_lnl_vectors};
-use libcocos::SiteLikelihoodTable;
 use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES};
+use libcocos::{SiteLikelihoodTable, par_au_test};
 use rand::SeedableRng;
 use rand::seq::SliceRandom;
 use rand_chacha::ChaCha8Rng;
 
 const PATHS: &[&str] = &["data/flat-phylo.siteLH"];
 
-const NUM_PERMUTATIONS: usize = 10;
+const NUM_PERMUTATIONS: usize = 5;
 
 fn main() -> anyhow::Result<()> {
     for path in PATHS {
@@ -21,7 +21,7 @@ fn main() -> anyhow::Result<()> {
             println!("Shuffling site-likelihoods {}/{NUM_PERMUTATIONS}...", i + 1);
             // for reproducibility of the results, we fix the seed
             let mut rng = ChaCha8Rng::from_seed([i as u8; 32]);
-            let mut permutation = (0..site_lh.num_sites()).collect::<Vec<_>>();
+            let mut permutation = (0..site_lh.num_trees()).collect::<Vec<_>>();
             permutation.shuffle(&mut rng);
 
             println!("Performing au test...");
@@ -46,5 +46,5 @@ fn main() -> anyhow::Result<()> {
 
 fn au_test(likelihoods: &SiteLikelihoodTable) -> anyhow::Result<Vec<f64>> {
     let mut rng = ChaCha8Rng::seed_from_u64(1);
-    libcocos::au_test(&mut rng, likelihoods, &DEFAULT_FACTORS, &DEFAULT_REPLICATES)
+    par_au_test(&mut rng, likelihoods, &DEFAULT_FACTORS, &DEFAULT_REPLICATES)
 }
