@@ -16,7 +16,7 @@
 #>
 param(
     [Parameter(Mandatory = $false)]
-    [string[]] $InputFiles = @("flat-phylo.siteLH"),
+    [string[]] $InputFiles = @("flat-phylo.siteLH", "medium.siteLH"),
 
     [Parameter(Mandatory = $false)]
     [int] $Repeats = 10
