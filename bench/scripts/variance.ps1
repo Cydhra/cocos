@@ -97,15 +97,15 @@ foreach ($InputName in $InputFiles) {
     }
 
     # calculate standard deviation of all trees of consel au vales
-    $ConselDeviations = (0..($Trees - 1)) | ForEach-Object {
-        $Values = $ConselResults[$_]
+    $ConselDeviations = $ConselResults.GetEnumerator() | ForEach-Object {
+        $Values = $_.Value
 
         ($Values | Measure-Object -StandardDeviation).StandardDeviation
     }
 
     # calculate standard deviations of all trees of cocos au values
-    $CocosDeviations = (0..($Trees - 1)) | ForEach-Object {
-        $Values = $CocosResults[$_]
+    $CocosDeviations = $CocosResults.GetEnumerator() | ForEach-Object {
+        $Values = $_.Value
 
         ($Values | Measure-Object -StandardDeviation).StandardDeviation
     }
