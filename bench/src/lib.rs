@@ -10,7 +10,7 @@ pub fn load_from_path(path: &str) -> anyhow::Result<SiteLikelihoodTable> {
     cocos_parse::parse_puzzle(reader)
 }
 
-/// Resample a [`SiteLikelihoodTable`] using an index list.
+/// Resample the rows of a [`SiteLikelihoodTable`] using an index list.
 /// The `i`-th vector of the resulting likelihood table is drawn from the original table as the
 /// vector at position `selection[i]`.
 /// The resulting table thus has `selection.len()` likelihood vectors.
@@ -20,8 +20,25 @@ pub fn resample_lnl_vectors(
 ) -> SiteLikelihoodTable {
     let mut result = SiteLikelihoodTable::new(selection.len(), original.num_sites());
 
-    for (i, &vector) in selection.iter().enumerate() {
-        result[i].copy_from_slice(&original[vector]);
+    for (i, &shuffled_index) in selection.iter().enumerate() {
+        result[i].copy_from_slice(&original[shuffled_index]);
+    }
+
+    result
+}
+
+/// Resample the columns of a [`SiteLikelihoodTable`] using an index list.
+/// The `i`-th alignment site of the resulting likelihood table is drawn from the original table
+/// at column `selection[i]`.
+/// The resulting table thus has `selection.len()` sites.
+pub fn resample_sites(original: &SiteLikelihoodTable, selection: &[usize]) -> SiteLikelihoodTable {
+    let mut result = SiteLikelihoodTable::new(original.num_trees(), selection.len());
+
+    for (i, &shuffled_index) in selection.iter().enumerate() {
+        result
+            .get_site_mut(i)
+            .zip(original.get_site(shuffled_index))
+            .for_each(|(t, &s)| *t = s);
     }
 
     result
