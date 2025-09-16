@@ -68,6 +68,23 @@ impl SiteLikelihoodTable {
     pub fn num_sites(&self) -> usize {
         self.num_sites
     }
+
+    /// Access the given `site` of the alignment.
+    /// The method returns an iterator over all trees' per-site log-likelihoods at `site` in their
+    /// sequence.
+    pub fn get_site(&self, site: usize) -> impl Iterator<Item = &f64> {
+        self.likelihoods.iter().skip(site).step_by(self.num_sites)
+    }
+
+    /// Access the given `site` of the alignment.
+    /// The method returns a mutable iterator over all trees' per-site log-likelihoods at `site`
+    /// in their sequence.
+    pub fn get_site_mut(&mut self, site: usize) -> impl Iterator<Item = &mut f64> {
+        self.likelihoods
+            .iter_mut()
+            .skip(site)
+            .step_by(self.num_sites)
+    }
 }
 
 impl Index<usize> for SiteLikelihoodTable {
