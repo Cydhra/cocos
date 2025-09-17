@@ -28,19 +28,9 @@ $SITE_LH_RECORD_SPLIT = "    "
 $ScratchDir = [System.IO.Path]::Combine($PSScriptRoot, "scratch")
 New-Item -ItemType Directory $ScratchDir -ErrorAction SilentlyContinue > $null
 
-. "$PSScriptRoot/installconsel.ps1"
-
-function ConvertTo-LinuxPath {
-    param (
-        [string] $Path
-    )
-
-    (wsl wslpath -a "'$Path'")
-}
-
-$MakermtBinaryWsl = ConvertTo-LinuxPath ([System.IO.Path]::Combine($ConselDir, "bin", "makermt"))
-$ConselBinaryWsl = ConvertTo-LinuxPath $ConselBinary
-$CatPvBinaryWsl = ConvertTo-LinuxPath ([System.IO.Path]::Combine($ConselDir, "bin", "catpv"))
+# Install and load consel
+& "$PSScriptRoot/installconsel.ps1"
+Import-Module "$PSScriptRoot/modconsel"
 
 # Make sure we optimize cocos
 $env:RUSTFLAGS="-C target-cpu=native"
@@ -58,24 +48,17 @@ foreach ($InputName in $InputFiles) {
 
     foreach ($rep in 1..$Repeats) {
         # Prepare Paths for use in WSL
-        $InputPathWsl = ConvertTo-LinuxPath $InputPath
-        $ScratchFileWsl = ConvertTo-LinuxPath ([System.IO.Path]::Combine($ScratchDir, "temp"))
+        $ScratchFile = [System.IO.Path]::Combine($ScratchDir, "temp")
 
         # Run consel
-        wsl $MakermtBinaryWsl --puzzle $InputPathWsl $ScratchFileWsl -s $rep
-        wsl $ConselBinaryWsl $ScratchFileWsl.rmt $ScratchFileWsl --no_bp --no_pp --no_sh
-        $Results = wsl $CatPvBinaryWsl $ScratchFileWsl.pv | `
-            Where-Object { -not [string]::IsNullOrEmpty($_) } | `
-            Select-Object -Skip 2 | `
+        (Invoke-Consel -InputPath $InputPath -OutputPath $ScratchFile -Seed $rep) | `
             ForEach-Object {
-                $Columns = $_ -split '\s{1,}'
-                $item = [int]$Columns[2]
-                $au = [float]$Columns[4]
-
-                if (-not ($ConselResults.Contains($item))) {
-                    $ConselResults[$item] = @($au)
+                Write-Host $_
+                exit 1
+                if (-not ($ConselResults.Contains($_.item))) {
+                    $ConselResults[$item] = @($_.au)
                 } else {
-                    $ConselResults[$item] += $au
+                    $ConselResults[$item] += $_.au
                 }
             }
 
