@@ -123,14 +123,15 @@ fn bootstrap_slice<R: Rng>(
     results.into_boxed_slice()
 }
 
-/// Generate `num_replicates` bootstrap replicates for each log-likelihood sequence and calculate
+/// Given a matrix of N log-likelihood sequences,
+/// generate `num_replicates` bootstrap replicates for each sequence and calculate
 /// their log-likelihood value.
 ///
 /// # Parameters
 /// - `rng` random number generator state
 /// - `likelihoods` a matrix of site log-likelihoods, one vector of site log-likelihoods per input
 ///   tree.
-/// - `num_replicates` how many replicates to generate per tree
+/// - `num_replicates` how many replicates to generate per input sequence
 /// - `replication_factor` the ratio between the original alignment length and the length of bootstrap sequences
 ///
 /// # Return
@@ -164,12 +165,9 @@ pub fn bootstrap<R: Rng>(
     )
 }
 
-/// Generate `num_replicates` bootstrap replicates for each log-likelihood sequence and calculate
+/// Given a matrix of N log-likelihood sequences,
+/// generate `num_replicates` bootstrap replicates for each sequence and calculate
 /// their log-likelihood value.
-/// The results are stored in an out-parameter so the multiscale bootstrap can reuse the same
-/// allocation.
-/// The method still needs large scratch-space because the results be efficiently computed in-place,
-/// but reusing the result array already reduces memory load.
 ///
 /// # Parameters
 /// - `rng` random number generator state
@@ -238,17 +236,21 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
     results.into_boxed_slice()
 }
 
-/// For each tree, calculate the number of replicates where that tree is the maximum likelihood
-/// tree.
+/// For a matrix of `B` bootstrap replicates for `N` input sequences,
+/// count how often each input sequence has the largest log-likelihood among all sequences in a
+/// replicate.
+/// This constitutes how often the hypothesis that the input object (for example a phylogenetic tree)
+/// is the optimal object to represent the data is fulfilled.
 ///
 /// # Parameters
 /// - `bootstrap_replicates` all bootstrap replicates for each tree.
+/// - `num_inputs` the number `N` of input sequences
 ///
 /// # Return
-/// A vector indicating for each tree how often it is the maximum likelihood within the bootstrap
-/// replicates
-pub fn count_max_replicates(bootstrap_replicates: &[Box<[f64]>], num_trees: usize) -> Vec<u32> {
-    let mut bp_vector = vec![0u32; num_trees];
+/// A vector indicating for each input sequence how often it has the maximum likelihood within the
+/// bootstrap replicates
+pub fn generate_hypotheses(bootstrap_replicates: &[Box<[f64]>], num_inputs: usize) -> Vec<u32> {
+    let mut bp_vector = vec![0u32; num_inputs];
 
     bootstrap_replicates.iter().for_each(|rep| {
         let best_lnl = rep.iter().max_by(|&a, &b| a.total_cmp(b)).unwrap();
@@ -267,7 +269,10 @@ pub fn count_max_replicates(bootstrap_replicates: &[Box<[f64]>], num_trees: usiz
     bp_vector
 }
 
-/// Convert the bootstrap counts to a bootstrap proportion.
+/// Convert the hypothesis counts generated with [`generate_hypotheses`] to a bootstrap proportion.
+/// This simply divides the counts by the number of replicates generated for each input sequence,
+/// meaning that ideally the proportions add up to one (this may not be the case if for some
+/// bootstrap replicate sets multiple input sequences are equally likely).
 ///
 /// # Parameters
 /// - `bp_table` the bp value table that is being filled with the proportions.
@@ -292,8 +297,9 @@ fn count_to_proportion<I: IntoIterator<Item = u32>>(
 }
 
 /// Given a matrix of bootstrap replicates (i.e., a matrix with B rows of N columns, where B is
-/// the number of bootstrap replicates and N is the number of trees), calculate the proportion of
-/// bootstrap replicates for each tree, where that tree is the best tree.
+/// the number of bootstrap replicates and N is the number of inputs to the test),
+/// calculate the proportion of  bootstrap replicates for each input, where that input has the highest
+/// likelihood.
 ///
 /// # Parameters
 /// - `bp_table` a table of bootstrap replicate values where we store the result
@@ -311,14 +317,15 @@ pub fn calc_bootstrap_proportion(
     scale_index: usize,
 ) {
     let num_replicates = bootstrap_replicates.len();
-    let bp_vector = count_max_replicates(bootstrap_replicates, bp_table.num_trees());
+    let bp_vector = generate_hypotheses(bootstrap_replicates, bp_table.num_trees());
 
     count_to_proportion(bp_table, bp_vector, scale_index, num_replicates);
 }
 
 /// Given a matrix of bootstrap replicates (i.e., a matrix with B rows of N columns, where B is
-/// the number of bootstrap replicates and N is the number of trees), calculate the proportion of
-/// bootstrap replicates for each tree, where that tree is the best tree.
+/// the number of bootstrap replicates andN is the number of inputs to the test),
+/// calculate the proportion of bootstrap replicates for each input, where that input has the
+/// highest likelihood.
 /// This method works in parallel by splitting the rows of the input array (i.e., the replicate sets
 /// containing one replicate per tree) into chunks.
 /// This requires linear scratch proportional to `B * N`.
@@ -344,7 +351,7 @@ pub fn par_calc_bootstrap_proportion(
     let chunk_size = bootstrap_replicates.len() / current_num_threads();
     let bp_vector = bootstrap_replicates
         .par_chunks(chunk_size)
-        .map(|chunk| count_max_replicates(chunk, bp_table.num_trees()))
+        .map(|chunk| generate_hypotheses(chunk, bp_table.num_trees()))
         .reduce(
             || vec![0u32; num_trees],
             |mut acc, item| {
@@ -393,7 +400,7 @@ mod tests {
             vec![2.0, 2.0, 1.0].into_boxed_slice(),
         ];
 
-        let bp = count_max_replicates(&replicates, 3);
+        let bp = generate_hypotheses(&replicates, 3);
 
         assert_eq!(bp.len(), 3);
         assert_eq!(bp[0], 4);
