@@ -1,3 +1,7 @@
+//! Verify that the input order of trees has no effect on the end result.
+//! We read in several input files, and then calculate the p-values under different permutations
+//! and verify that the p-values do not differ significantly (in the first 9 decimal places).
+
 use bench::{load_from_path, resample_lnl_vectors};
 use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES};
 use libcocos::{SiteLikelihoodTable, par_au_test};
