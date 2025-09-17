@@ -19,7 +19,7 @@ use rand::distr::Uniform;
 pub const DEFAULT_FACTORS: [f64; 10] = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4];
 
 /// The default bootstrap replicate counts for each scale factor. The values were recommended
-/// by H. Shimodaira in https://doi.org/10.1080/10635150290069913, and are also used in CONSEL.
+/// by H. Shimodaira in <https://doi.org/10.1080/10635150290069913>, and are also used in CONSEL.
 pub const DEFAULT_REPLICATES: [usize; 10] = [
     10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000,
 ];

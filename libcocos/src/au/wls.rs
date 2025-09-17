@@ -160,7 +160,7 @@ impl<'tree> WlsProblem<'tree> {
 /// thousand trees.
 ///
 /// # References
-/// For details refer to https://doi.org/10.1080/10635150290069913.
+/// For details refer to <https://doi.org/10.1080/10635150290069913>.
 ///
 /// See also [`fit_model_newton`].
 ///

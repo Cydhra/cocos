@@ -2,7 +2,7 @@
 #![warn(missing_docs)]
 #![allow(clippy::inline_always)]
 
-//! This library implements the approximately unbiased test by H. Shimodaira (https://doi.org/10.1080/10635150290069913).
+//! This library implements the approximately unbiased test by H. Shimodaira (<https://doi.org/10.1080/10635150290069913>).
 //! The main contribution is the full parallel implementation of the test, which is gated behind
 //! the crate feature `rayon`.
 //! Furthermore, the crate feature `simd` enables a `portable_simd` vector implementation of the
@@ -16,7 +16,7 @@
 //!
 //! The library takes pre-parsed log-likelihood vectors as input ([`SiteLikelihoodTable`])
 //! and can therefore be used to apply the AU test to every selection problem that uses the
-//! RELL bootstrap method (https://doi.org/10.1007/BF02109483).
+//! RELL bootstrap method (<https://doi.org/10.1007/BF02109483>).
 //!
 //! A separate binary crate with a CLI is available which applies the test to phylogenetic trees.
 
@@ -186,6 +186,8 @@ impl BpTable {
     /// The replication numbers are `usize`, for convenient use as an array index, and since each
     /// bootstrap replicate needs to be stored at some point, they are constrained to the platform's
     /// address size anyway.
+    ///
+    /// [`num_scales`]: Self::num_scales
     pub fn num_replicates(&self) -> &[usize] {
         &self.num_replicates
     }

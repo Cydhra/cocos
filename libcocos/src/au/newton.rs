@@ -208,7 +208,7 @@ pub fn fit_model_to_tree(
 /// Returns a vector of tuples containing the `c` and `d` value estimates for each tree.
 ///
 /// # References
-/// For details refer to https://doi.org/10.1080/10635150290069913, Appendix 9
+/// For details refer to <https://doi.org/10.1080/10635150290069913>, Appendix 9
 ///
 /// See also [`fit_model_wls`].
 ///
@@ -249,7 +249,7 @@ pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
 /// This method uses the global rayon thread pool.
 ///
 /// # References
-/// For details refer to https://doi.org/10.1080/10635150290069913, Appendix 9
+/// For details refer to <https://doi.org/10.1080/10635150290069913>, Appendix 9
 ///
 /// See also [`par_fit_model_wls`].
 ///
