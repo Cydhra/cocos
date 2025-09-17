@@ -53,12 +53,10 @@ foreach ($InputName in $InputFiles) {
         # Run consel
         (Invoke-Consel -InputPath $InputPath -OutputPath $ScratchFile -Seed $rep) | `
             ForEach-Object {
-                Write-Host $_
-                exit 1
                 if (-not ($ConselResults.Contains($_.item))) {
-                    $ConselResults[$item] = @($_.au)
+                    $ConselResults[$_.item] = @($_.au)
                 } else {
-                    $ConselResults[$item] += $_.au
+                    $ConselResults[$_.item] += $_.au
                 }
             }
 
