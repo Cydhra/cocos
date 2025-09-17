@@ -21,7 +21,7 @@
 //! A separate binary crate with a CLI is available which applies the test to phylogenetic trees.
 
 use crate::au::get_au_value;
-use crate::bootstrap::{bootstrap, calc_bootstrap_proportion};
+use crate::bootstrap::bp_test;
 use rand::Rng;
 use std::ops::{Index, IndexMut};
 
@@ -241,21 +241,7 @@ pub fn au_test<R>(
 where
     R: Rng,
 {
-    let mut bp_table = BpTable::new(
-        bootstrap_scales.to_vec().into_boxed_slice(),
-        bootstrap_replicates.to_vec().into_boxed_slice(),
-        likelihoods.num_trees(),
-    );
-
-    for (scale_index, (&bootstrap_scale, &num_replicates)) in bootstrap_scales
-        .iter()
-        .zip(bootstrap_replicates.iter())
-        .enumerate()
-    {
-        let replicates = bootstrap(rng, likelihoods, num_replicates, bootstrap_scale);
-        calc_bootstrap_proportion(&mut bp_table, &replicates, scale_index);
-    }
-
+    let bp_table = bp_test(rng, likelihoods, bootstrap_scales, bootstrap_replicates);
     get_au_value(&bp_table)
 }
 
@@ -274,23 +260,9 @@ pub fn par_au_test<R>(
 where
     R: Rng + Clone + Send,
 {
-    use au::par_get_au_value;
-    use bootstrap::{par_bootstrap, par_calc_bootstrap_proportion};
+    use crate::au::par_get_au_value;
+    use crate::bootstrap::par_bp_test;
 
-    let mut bp_table = BpTable::new(
-        bootstrap_scales.to_vec().into_boxed_slice(),
-        bootstrap_replicates.to_vec().into_boxed_slice(),
-        likelihoods.num_trees(),
-    );
-
-    for (scale_index, (&bootstrap_scale, &num_replicates)) in bootstrap_scales
-        .iter()
-        .zip(bootstrap_replicates.iter())
-        .enumerate()
-    {
-        let replicates = par_bootstrap(rng, likelihoods, num_replicates, bootstrap_scale);
-        par_calc_bootstrap_proportion(&mut bp_table, &replicates, scale_index);
-    }
-
+    let bp_table = par_bp_test(rng, likelihoods, bootstrap_scales, bootstrap_replicates);
     par_get_au_value(&bp_table)
 }

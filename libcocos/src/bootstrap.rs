@@ -181,7 +181,7 @@ pub fn bootstrap<R: Rng>(
 /// trees have zero site likelihoods, or if the result array is too small to store all
 #[cfg(feature = "rayon")]
 pub fn par_bootstrap<R: Rng + Clone + Send>(
-    rng: &mut R,
+    rng: &R,
     likelihoods: &SiteLikelihoodTable,
     num_replicates: usize,
     replication_factor: f64,
@@ -361,6 +361,104 @@ pub fn par_calc_bootstrap_proportion(
         );
 
     count_to_proportion(bp_table, bp_vector, num_bootstrap, num_replicates);
+}
+
+/// Convenience method to perform the multiscale BP-test.
+/// This method calls [`bootstrap`] and [`calc_bootstrap_proportion`] once for each scale in
+/// `bootstrap_scales`, generating a number of replicates as indicated by the corresponding value in
+/// `bootstrap_replicates`. All results are stored in an instance of [`BpTable`], which is returned.
+///
+/// # Parameters
+/// - `rng` the random number generator to use during the BP test
+/// - `likelihoods` a matrix of `N` input sequences of log-likelihoods that are being resampled
+///   by the bootstrap resampling
+/// - `bootstrap_scales` the scaling factors of the multiscale bootstrap procedure.
+/// - `bootstrap_replicates` how many replicates to generate for each corresponding scaling factor
+///
+/// # Return
+/// The [`BpTable`] containing the bootstrap proportions of all input sequences for each scale
+/// individually.
+///
+/// [`bootstrap`]: bootstrap
+/// [`calc_bootstrap_proportion`]: calc_bootstrap_proportion
+/// [`BpTable`]: crate::BpTable
+pub fn bp_test<R>(
+    rng: &mut R,
+    likelihoods: &SiteLikelihoodTable,
+    bootstrap_scales: &[f64],
+    bootstrap_replicates: &[usize],
+) -> BpTable
+where
+    R: Rng,
+{
+    let mut bp_table = BpTable::new(
+        bootstrap_scales.to_vec().into_boxed_slice(),
+        bootstrap_replicates.to_vec().into_boxed_slice(),
+        likelihoods.num_trees(),
+    );
+
+    for (scale_index, (&bootstrap_scale, &num_replicates)) in bootstrap_scales
+        .iter()
+        .zip(bootstrap_replicates.iter())
+        .enumerate()
+    {
+        let replicates = bootstrap(rng, likelihoods, num_replicates, bootstrap_scale);
+        calc_bootstrap_proportion(&mut bp_table, &replicates, scale_index);
+    }
+
+    bp_table
+}
+
+/// Convenience method to perform the multiscale BP-test in parallel.
+/// This method calls [`par_bootstrap`] and [`par_calc_bootstrap_proportion`] once for each scale in
+/// `bootstrap_scales`, generating a number of replicates as indicated by the corresponding value in
+/// `bootstrap_replicates`. All results are stored in an instance of [`BpTable`], which is returned.
+///
+/// # Parameters
+/// - `rng` the random number generator to use during the BP test
+/// - `likelihoods` a matrix of `N` input sequences of log-likelihoods that are being resampled
+///   by the bootstrap resampling
+/// - `bootstrap_scales` the scaling factors of the multiscale bootstrap procedure.
+/// - `bootstrap_replicates` how many replicates to generate for each corresponding scaling factor
+///
+/// # Return
+/// The [`BpTable`] containing the bootstrap proportions of all input sequences for each scale
+/// individually.
+///
+/// [`par_bootstrap`]: par_bootstrap
+/// [`par_calc_bootstrap_proportion`]: par_calc_bootstrap_proportion
+/// [`BpTable`]: crate::BpTable
+#[cfg(feature = "rayon")]
+pub fn par_bp_test<R>(
+    rng: &R,
+    likelihoods: &SiteLikelihoodTable,
+    bootstrap_scales: &[f64],
+    bootstrap_replicates: &[usize],
+) -> BpTable
+where
+    R: Rng + Clone + Send,
+{
+    use crate::bootstrap::{par_bootstrap, par_calc_bootstrap_proportion};
+
+    let mut bp_table = BpTable::new(
+        bootstrap_scales.to_vec().into_boxed_slice(),
+        bootstrap_replicates.to_vec().into_boxed_slice(),
+        likelihoods.num_trees(),
+    );
+
+    for (scale_index, (&bootstrap_scale, &num_replicates)) in bootstrap_scales
+        .iter()
+        .zip(bootstrap_replicates.iter())
+        .enumerate()
+    {
+        // TODO we aren't using the rng correctly here, we would have to consume it and return
+        //  the used rng to guarantee the different scales arent generating the same prefix
+        //  of their individual distribution
+        let replicates = par_bootstrap(rng, likelihoods, num_replicates, bootstrap_scale);
+        par_calc_bootstrap_proportion(&mut bp_table, &replicates, scale_index);
+    }
+
+    bp_table
 }
 
 #[cfg(test)]
