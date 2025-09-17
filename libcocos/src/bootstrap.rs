@@ -1,10 +1,25 @@
+//! This module handles the RELL bootstrap method.
+//! Methods in this module take a matrix of log-likelihoods and approximate a bootstrap replicate
+//! by drawing from the log-likelihoods and summing them to obtain the likelihood of a replicate.
+//!
+//! This was designed for phylogenetic trees, where drawing per-site log-likelihoods approximates
+//! the bootstrap resampling of the Multiple Sequence Alignment, even if the model parameters
+//! are not optimized for the resampled dataset.
+//! However, it can be applied to other problems that allow sampling log-likelihoods of independent
+//! events to approximate a bootstrap resampling of the original dataset.
+//! The module makes no assumptions about the source of the log-likelihood and resamples at random
+//! with the provided random number generator.
+
 use crate::vectors::dot_prod;
 use crate::{BpTable, ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods};
 use rand::Rng;
 use rand::distr::Uniform;
 
+/// The default bootstrap scales recommended by H. Shimodaira in the CONSEL software.
 pub const DEFAULT_FACTORS: [f64; 10] = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4];
 
+/// The default bootstrap replicate counts for each scale factor. The values were recommended
+/// by H. Shimodaira in https://doi.org/10.1080/10635150290069913, and are also used in CONSEL.
 pub const DEFAULT_REPLICATES: [usize; 10] = [
     10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000,
 ];
@@ -276,7 +291,20 @@ fn count_to_proportion<I: IntoIterator<Item = u32>>(
         });
 }
 
-/// Calculate the bootstrap proportion of each tree for one or multiple bootstrap tables.
+/// Given a matrix of bootstrap replicates (i.e., a matrix with B rows of N columns, where B is
+/// the number of bootstrap replicates and N is the number of trees), calculate the proportion of
+/// bootstrap replicates for each tree, where that tree is the best tree.
+///
+/// # Parameters
+/// - `bp_table` a table of bootstrap replicate values where we store the result
+/// - `bootstrap_replicates` the bootstrap replicate matrix containing one full set of N replicates
+///   per entry
+/// - `scale_index` the index in the `bp_table` where we will store the results, corresponding to
+///   the scale's index in the multiscale bootstrap process.
+///
+/// # Parallelization
+/// A parallel version of this function is available with the `rayon` feature as
+/// [`par_calc_bootstrap_proportion`].
 pub fn calc_bootstrap_proportion(
     bp_table: &mut BpTable,
     bootstrap_replicates: &[Box<[f64]>],
@@ -288,6 +316,19 @@ pub fn calc_bootstrap_proportion(
     count_to_proportion(bp_table, bp_vector, scale_index, num_replicates);
 }
 
+/// Given a matrix of bootstrap replicates (i.e., a matrix with B rows of N columns, where B is
+/// the number of bootstrap replicates and N is the number of trees), calculate the proportion of
+/// bootstrap replicates for each tree, where that tree is the best tree.
+/// This method works in parallel by splitting the rows of the input array (i.e., the replicate sets
+/// containing one replicate per tree) into chunks.
+/// This requires linear scratch proportional to `B * N`.
+///
+/// # Parameters
+/// - `bp_table` a table of bootstrap replicate values where we store the result
+/// - `bootstrap_replicates` the bootstrap replicate matrix containing one full set of N replicates
+///   per entry
+/// - `scale_index` the index in the `bp_table` where we will store the results, corresponding to
+///   the scale's index in the multiscale bootstrap process.
 #[cfg(feature = "rayon")]
 pub fn par_calc_bootstrap_proportion(
     bp_table: &mut BpTable,
