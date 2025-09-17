@@ -1,13 +1,13 @@
 #[cfg(feature = "simd")]
 mod simd;
 #[cfg(feature = "simd")]
-pub use simd::*;
+pub(crate) use simd::*;
 
 // scalar fallback for stable build, since portable simd is still nightly
 #[cfg(not(feature = "simd"))]
 mod scalar;
 #[cfg(not(feature = "simd"))]
-pub use scalar::*;
+pub(crate) use scalar::*;
 
 #[cfg(test)]
 mod tests {

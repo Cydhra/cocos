@@ -3,7 +3,7 @@ use std::simd::Simd;
 const VECTOR_SIZE: usize = 8;
 
 #[inline]
-pub fn dot_prod(a: &[f64], b: &[f64]) -> f64 {
+pub(crate) fn dot_prod(a: &[f64], b: &[f64]) -> f64 {
     assert_eq!(a.len(), b.len());
 
     a[..]

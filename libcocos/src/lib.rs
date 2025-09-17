@@ -29,7 +29,7 @@ pub mod au;
 
 pub mod bootstrap;
 
-pub mod vectors;
+pub(crate) mod vectors;
 
 /// A table containing the per-site (log-)likelihoods of `N` phylogenetic trees, with `M` alignment
 /// sites each. The table is used during bootstrap to generate bootstrap replicates of the alignment
