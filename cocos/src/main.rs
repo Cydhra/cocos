@@ -1,10 +1,6 @@
 use clap::*;
-use libcocos::BpTable;
 use libcocos::au::{get_au_value, par_get_au_value};
-use libcocos::bootstrap::{
-    DEFAULT_FACTORS, DEFAULT_REPLICATES, bootstrap, calc_bootstrap_proportion, par_bootstrap,
-    par_calc_bootstrap_proportion,
-};
+use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES, bp_test, par_bp_test};
 use rand::{RngCore, SeedableRng, rng};
 use rand_chacha::ChaCha8Rng;
 use rayon::{ThreadPoolBuilder, current_num_threads};
@@ -204,38 +200,29 @@ fn main() {
             });
     }
 
-    let mut bp_table = BpTable::new(
-        Box::new(DEFAULT_FACTORS),
-        Box::new(DEFAULT_REPLICATES),
-        likelihoods.num_trees(),
-    );
-    let start = Instant::now();
-
     log!(
         "Bootstrapping {} trees at {} scales with {} threads.",
-        bp_table.num_trees(),
-        bp_table.scales().len(),
+        likelihoods.num_trees(),
+        DEFAULT_FACTORS.len(),
         current_num_threads(),
     );
 
-    for (scale_index, (&bootstrap_scale, &num_replicates)) in DEFAULT_FACTORS
-        .iter()
-        .zip(DEFAULT_REPLICATES.iter())
-        .enumerate()
-    {
-        let replicates = if args.threads == 1 {
-            bootstrap(&mut rng, &likelihoods, num_replicates, bootstrap_scale)
-        } else {
-            par_bootstrap(&mut rng, &likelihoods, num_replicates, bootstrap_scale)
-        };
-
-        if args.threads == 1 {
-            calc_bootstrap_proportion(&mut bp_table, &replicates, scale_index);
-        } else {
-            par_calc_bootstrap_proportion(&mut bp_table, &replicates, scale_index);
-        }
-    }
-
+    let start = Instant::now();
+    let bp_table = if args.threads == 1 {
+        bp_test(
+            &mut rng,
+            &likelihoods,
+            &DEFAULT_FACTORS,
+            &DEFAULT_REPLICATES,
+        )
+    } else {
+        par_bp_test(
+            &mut rng,
+            &likelihoods,
+            &DEFAULT_FACTORS,
+            &DEFAULT_REPLICATES,
+        )
+    };
     log!("Finished Bootstrapping in {:?}.", start.elapsed());
 
     let au_values = if bp_table.num_trees() >= 1000 {
