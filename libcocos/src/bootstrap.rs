@@ -10,8 +10,10 @@
 //! The module makes no assumptions about the source of the log-likelihood and resamples at random
 //! with the provided random number generator.
 
-use crate::vectors::dot_prod;
-use crate::{BpTable, ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods};
+use crate::vectors::{dot_prod, max};
+use crate::{
+    BootstrapReplicates, BpTable, ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods,
+};
 use rand::Rng;
 use rand::distr::Uniform;
 
@@ -234,6 +236,72 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
         });
 
     results.into_boxed_slice()
+}
+
+/// Given a matrix of replicates, subtract the maximum of each full replicate of the likelihood for
+/// the given tree and write the result into `target`.
+/// The tree is identified by `vector_index`, meaning every `vector_index`-th element of each
+/// replicate in `replicate_likelihoods`.
+/// The maximum of each `replicate` is pre-calculated in the `maxima` array.
+///
+/// This method is the kernel used by [`normalize_replicates`] and [`par_normalize_replicates`].
+fn normalize_replicate_vector(
+    target: &mut [f64],
+    replicate_likelihoods: &[Box<[f64]>],
+    maxima: &[f64],
+    vector_index: usize,
+) {
+    target
+        .iter_mut()
+        .zip(replicate_likelihoods.iter())
+        .enumerate()
+        .for_each(|(i, (target, replicate))| *target = maxima[i] - replicate[vector_index]);
+}
+
+pub fn normalize_replicates(
+    replicate_likelihoods: &[Box<[f64]>],
+    replicate_matrix: &mut BootstrapReplicates,
+    scale_index: usize,
+) {
+    // Calculate the maximum likelihood for each bootstrap replicate. Technically the paper calls
+    // for calculating the maximum without the element that is being compared with, but since it
+    // is never important whether the statistic is zero or below zero, we can just use the maximum
+    // every time, accepting that the best input for the replicate gets likelihood zero
+    let boot_max: Box<[_]> = replicate_likelihoods
+        .iter()
+        .map(|replicate| max(replicate))
+        .collect();
+
+    // subtract the maximum from each replicate likelihood for each tree, such that all bootstrap
+    // replicates are distributed around 0
+    replicate_matrix
+        .get_bootstrap_vectors_mut(scale_index)
+        .enumerate()
+        .for_each(|(vector_index, vector)| {
+            normalize_replicate_vector(vector, &replicate_likelihoods, &boot_max, vector_index);
+        })
+}
+
+#[cfg(feature = "rayon")]
+pub fn par_normalize_replicates(
+    replicate_likelihoods: &[Box<[f64]>],
+    replicate_matrix: &mut BootstrapReplicates,
+    scale_index: usize,
+) {
+    use rayon::prelude::*;
+
+    // for comments on this method see sequential version
+    let boot_max: Box<[_]> = replicate_likelihoods
+        .par_iter()
+        .map(|replicate| max(replicate))
+        .collect();
+    replicate_matrix
+        .get_bootstrap_vectors_mut(scale_index)
+        .enumerate()
+        .par_bridge()
+        .for_each(|(vector_index, vector)| {
+            normalize_replicate_vector(vector, &replicate_likelihoods, &boot_max, vector_index);
+        })
 }
 
 /// For a matrix of `B` bootstrap replicates for `N` input sequences,
@@ -466,6 +534,14 @@ mod tests {
     use super::*;
     use rand::rng;
 
+    macro_rules! assert_eq_eps {
+        ($slice:expr, $($rest:tt)*) => {
+            let s = $slice;
+            let rest = $($rest)*;
+            assert!(s.iter().zip(rest).all(|(a, b)| (a - b).abs() < 1E-9), "lists differ more than epsilon: {:?} != {:?}", s, rest);
+        };
+    }
+
     #[test]
     fn test_selection_weight() {
         // test whether the selection vector have the same length as the original vector and sum
@@ -504,5 +580,30 @@ mod tests {
         assert_eq!(bp[0], 4);
         assert_eq!(bp[1], 2);
         assert_eq!(bp[2], 2);
+    }
+
+    #[test]
+    fn test_normalize_replicates() {
+        // normalize replicates is supposed to move all replicate likelihoods towards 0, such that
+        // the maximum likelihood of each replicate is negative (second_highest - max), and all
+        // other likelihoods are slightly positive (max - other).
+        // Our code contains an optimization which moves the maximum to 0 instead of negative, since
+        // it is never important whether the value is actually negative or just equal to zero.
+
+        let replicates = [
+            vec![-2.0, -1.9, -2.0].into_boxed_slice(),
+            vec![-2.0, -2.0, -1.0].into_boxed_slice(),
+            vec![-2.0, -1.0, -1.0].into_boxed_slice(),
+            vec![-2.0, -1.0, -0.5].into_boxed_slice(),
+        ];
+
+        let mut replicate_matrix = BootstrapReplicates::new(Box::new([1.0]), Box::new([4]), 3);
+        normalize_replicates(replicates.as_slice(), &mut replicate_matrix, 0);
+
+        let mut iter = replicate_matrix.get_bootstrap_vectors(0);
+
+        assert_eq_eps!(iter.next().unwrap(), &[0.1, 1.0, 1.0, 1.5]);
+        assert_eq_eps!(iter.next().unwrap(), &[0.0, 1.0, 0.0, 0.5]);
+        assert_eq_eps!(iter.next().unwrap(), &[0.1, 0.0, 0.0, 0.0]);
     }
 }

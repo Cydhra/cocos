@@ -109,6 +109,80 @@ pub type SiteLikelihoods = [f64];
 /// length.
 pub type ResamplingWeights = Box<[f64]>;
 
+#[derive(Clone, Debug)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+pub struct BootstrapReplicates {
+    /// A set of matrices, each matrix containing all bootstrap replicates for all trees of a single
+    /// scaling factor, one matrix per scaling factor.
+    replicates: Box<[Box<[f64]>]>,
+
+    /// An array of scaling factors. For each factor, each tree generates `B` bootstrap replicates
+    /// with a sequence length equal to the original sequence length multiplied by the factor.
+    /// The number of replicates `B` is stored in [`scales`].
+    scales: Box<[f64]>,
+
+    /// An array with the same size as [`scales`], indicating how many bootstrap replicates each
+    /// tree generates per scaling factor.
+    num_replicates: Box<[usize]>,
+
+    /// Number of rows in the [`bp_values`] matrix.
+    num_trees: usize,
+}
+
+impl BootstrapReplicates {
+    /// Initialize a new empty bootstrap list, initialized with the given array of scales and number
+    /// of replicates.
+    /// The bootstrap matrices can be initialized with ???
+    ///
+    /// # Parameters
+    /// - `scales` The array of scaling factors that were used during bootstrapping. Each tree has
+    ///   one BP value per scaling factor.
+    /// - `num_replicates` The array of replication numbers, i.e., the `i`-th value indicates how
+    ///   many bootstrap replicates were generated for the `i`-th BP value of each tree.
+    /// - `num_tree` for how many trees the matrix is to be generated.
+    ///
+    /// [`scale_bp_values_mut`]: Self::scale_bp_values_mut
+    pub fn new(scales: Box<[f64]>, num_replicates: Box<[usize]>, num_trees: usize) -> Self {
+        // allocate the arrays for the bootstrap statistics
+        let mut replicate_vector = Vec::with_capacity(scales.len());
+        for &count in &num_replicates {
+            replicate_vector.push(vec![0f64; count * num_trees].into_boxed_slice());
+        }
+
+        Self {
+            replicates: replicate_vector.into_boxed_slice(),
+            scales,
+            num_replicates,
+            num_trees,
+        }
+    }
+
+    /// Get access to the vectors containing the bootstrap replicates for each tree at a
+    /// given `scale_index`. That is, given the index `scale_index` of a scaling factor,
+    /// get an iterator over all [normalized] bootstrap likelihood vectors associated with the
+    /// inputs to the bootstrap algorithm (one vector per input sequence).
+    ///
+    /// [normalized]: bootstrap::normalize_replicates
+    pub fn get_bootstrap_vectors(&self, scale_index: usize) -> impl Iterator<Item = &[f64]> {
+        let num_replicates = self.num_replicates[scale_index];
+        self.replicates[scale_index].chunks_exact(num_replicates)
+    }
+
+    /// Get mutable access to the vectors containing the bootstrap replicates for each tree at a
+    /// given `scale_index`. That is, given the index `scale_index` of a scaling factor,
+    /// get an iterator over all [normalized] bootstrap likelihood vectors associated with the
+    /// inputs to the bootstrap algorithm (one vector per input sequence).
+    ///
+    /// [normalized]: bootstrap::normalize_replicates
+    pub fn get_bootstrap_vectors_mut(
+        &mut self,
+        scale_index: usize,
+    ) -> impl Iterator<Item = &mut [f64]> {
+        let num_replicates = self.num_replicates[scale_index];
+        self.replicates[scale_index].chunks_exact_mut(num_replicates)
+    }
+}
+
 /// A matrix containing one or more BP values per input tree, one for each scale factor in the
 /// multiscale bootstrapping process.
 #[derive(Clone, Debug)]
