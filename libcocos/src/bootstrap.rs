@@ -187,8 +187,7 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
     replication_factor: f64,
 ) -> Box<[Box<[f64]>]> {
     use rayon::current_num_threads;
-    use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
-    use rayon::slice::ParallelSlice;
+    use rayon::prelude::*;
 
     assert!(num_replicates > 0, "cannot bootstrap with 0 replicates");
     assert!(

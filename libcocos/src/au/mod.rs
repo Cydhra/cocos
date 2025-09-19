@@ -71,7 +71,7 @@ pub fn get_au_value(
 pub fn par_get_au_value(
     bootstrap_replicates: &BootstrapReplicates,
 ) -> Result<Vec<f64>, argmin_math::Error> {
-    use rayon::iter::{IntoParallelIterator, ParallelIterator};
+    use rayon::prelude::*;
 
     let params = par_fit_model_wls(bootstrap_replicates);
     let init = params
