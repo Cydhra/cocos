@@ -123,7 +123,7 @@ pub struct BootstrapReplicates {
 
     /// An array with the same size as [`scales`], indicating how many bootstrap replicates each
     /// tree generates per scaling factor.
-    num_replicates: Box<[usize]>,
+    replication_counts: Box<[usize]>,
 
     /// Number of rows in the [`bp_values`] matrix.
     num_trees: usize,
@@ -142,17 +142,17 @@ impl BootstrapReplicates {
     /// - `num_tree` for how many trees the matrix is to be generated.
     ///
     /// [`scale_bp_values_mut`]: Self::scale_bp_values_mut
-    pub fn new(scales: Box<[f64]>, num_replicates: Box<[usize]>, num_trees: usize) -> Self {
+    pub fn new(scales: Box<[f64]>, replication_counts: Box<[usize]>, num_trees: usize) -> Self {
         // allocate the arrays for the bootstrap statistics
         let mut replicate_vector = Vec::with_capacity(scales.len());
-        for &count in &num_replicates {
+        for &count in &replication_counts {
             replicate_vector.push(vec![0f64; count * num_trees].into_boxed_slice());
         }
 
         Self {
             replicates: replicate_vector.into_boxed_slice(),
             scales,
-            num_replicates,
+            replication_counts,
             num_trees,
         }
     }
@@ -164,7 +164,7 @@ impl BootstrapReplicates {
     ///
     /// [normalized]: bootstrap::normalize_replicates
     pub fn get_bootstrap_vectors(&self, scale_index: usize) -> impl Iterator<Item = &[f64]> {
-        let num_replicates = self.num_replicates[scale_index];
+        let num_replicates = self.replication_counts[scale_index];
         self.replicates[scale_index].chunks_exact(num_replicates)
     }
 
@@ -178,8 +178,31 @@ impl BootstrapReplicates {
         &mut self,
         scale_index: usize,
     ) -> impl Iterator<Item = &mut [f64]> {
-        let num_replicates = self.num_replicates[scale_index];
+        let num_replicates = self.replication_counts[scale_index];
         self.replicates[scale_index].chunks_exact_mut(num_replicates)
+    }
+
+    /// The number of scaling factors to the multiscale bootstrap process.
+    pub fn num_scales(&self) -> usize {
+        self.scales.len()
+    }
+
+    /// Get the scaling factors to the multiscale bootstrap process in the order of the replicate
+    /// matrices.
+    pub fn scales(&self) -> &[f64] {
+        &self.scales
+    }
+
+    /// Get the numbers of replicates for each [scaling factor].
+    ///
+    /// [scaling factor]: Self::scales
+    pub fn replication_counts(&self) -> &[usize] {
+        &self.replication_counts
+    }
+
+    /// Get the number of input sequences to the bootstrap process that generated this instance.
+    pub fn num_trees(&self) -> usize {
+        self.num_trees
     }
 }
 
