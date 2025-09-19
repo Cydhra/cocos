@@ -1,26 +1,26 @@
 //! This module solves the WLS problem for the AU test. Since the problem only has two parameters,
 //! we can solve the matrix analytically and need not use a numerical solution.
 
-use crate::BpTable;
+use crate::BootstrapReplicates;
 use crate::au::math::{pdf, quantile};
 
 /// Problem instance for the weighted least squares regression that fits curvature and signed
 /// distance to the observed BP values.
-pub(super) struct WlsProblem<'tree> {
-    bp_table: &'tree BpTable,
+pub(super) struct WlsProblem<'input> {
+    bootstrap_replicates: &'input BootstrapReplicates,
     scale_roots: Box<[f64]>,
 }
 
-impl<'tree> WlsProblem<'tree> {
-    pub(super) fn new(bp_table: &'tree BpTable) -> Self {
-        let scale_roots = bp_table
+impl<'input> WlsProblem<'input> {
+    pub(super) fn new(bootstrap_replicates: &'input BootstrapReplicates) -> Self {
+        let scale_roots = bootstrap_replicates
             .scales
             .iter()
             .map(|&r| r.sqrt())
             .collect::<Box<[_]>>();
 
         Self {
-            bp_table,
+            bootstrap_replicates,
             scale_roots,
         }
     }
@@ -57,11 +57,19 @@ impl<'tree> WlsProblem<'tree> {
     /// is no solution.
     fn fit_parameters_to_tree(&self, i: usize) -> Result<(f64, f64), (f64, f64)> {
         // compute weights and observed distances
-        let mut observed_distances = vec![0.0; self.bp_table.num_scales()].into_boxed_slice();
-        let mut weight_vector = vec![0.0; self.bp_table.num_scales()].into_boxed_slice();
+        let mut observed_distances =
+            vec![0.0; self.bootstrap_replicates.num_scales()].into_boxed_slice();
+        let mut weight_vector =
+            vec![0.0; self.bootstrap_replicates.num_scales()].into_boxed_slice();
 
         let mut non_zero_observations = 0;
-        for (scale_index, &bp) in self.bp_table.tree_bp_values(i).iter().enumerate() {
+        for (scale_index, &count) in self
+            .bootstrap_replicates
+            .compute_bp_values(i, 0.0)
+            .iter()
+            .enumerate()
+        {
+            let bp = count / self.bootstrap_replicates.replication_counts[scale_index] as f64;
             if bp < 1E-16 {
                 // guard against division by zero, both weight and distance is observed
                 // to be zero in those cases
@@ -70,7 +78,8 @@ impl<'tree> WlsProblem<'tree> {
             observed_distances[scale_index] = Self::compute_distance(bp);
             let x = pdf(observed_distances[scale_index]);
             weight_vector[scale_index] =
-                (x * x * self.bp_table.num_replicates()[scale_index] as f64) / ((1.0 - bp) * bp);
+                (x * x * self.bootstrap_replicates.replication_counts()[scale_index] as f64)
+                    / ((1.0 - bp) * bp);
             non_zero_observations += 1;
         }
 
@@ -95,13 +104,13 @@ impl<'tree> WlsProblem<'tree> {
 
         let model_d = weight_vector
             .iter()
-            .zip(self.bp_table.scales().iter())
+            .zip(self.bootstrap_replicates.scales().iter())
             .map(|(&w, &scale)| w * scale)
             .sum::<f64>();
         let off_diagonal = weight_vector.iter().sum::<f64>();
         let model_c = weight_vector
             .iter()
-            .zip(self.bp_table.scales().iter())
+            .zip(self.bootstrap_replicates.scales().iter())
             .map(|(&w, &scale)| w / scale)
             .sum::<f64>();
 
@@ -144,7 +153,10 @@ impl<'tree> WlsProblem<'tree> {
 /// replicate set (i.e., per tree).
 ///
 /// # Parameters
-/// - `bp_table` The table of the BP values at all scales for each tree.
+/// - `bootstrap_replicates` A set of matrices of bootstrap replicates of all input sequences, one
+///   matrix per bootstrap scale.
+/// - `threshold` The threshold to use for evaluating bootstrap proportions, where a threshold of
+///   zero means canonical BP values.
 ///
 /// # Return
 /// A vector of `Result<(f64, f64), (f64, f64)>`.
@@ -166,11 +178,13 @@ impl<'tree> WlsProblem<'tree> {
 ///
 /// [`BpTable`]: BpTable
 /// [`fit_model_newton`]: super::fit_model_newton
-pub fn fit_model_wls(bp_table: &BpTable) -> Vec<Result<(f64, f64), (f64, f64)>> {
-    let problem = WlsProblem::new(bp_table);
+pub fn fit_model_wls(
+    bootstrap_replicates: &BootstrapReplicates,
+) -> Vec<Result<(f64, f64), (f64, f64)>> {
+    let problem = WlsProblem::new(bootstrap_replicates);
 
-    let mut result = Vec::with_capacity(bp_table.num_trees());
-    for tree in 0..bp_table.num_trees() {
+    let mut result = Vec::with_capacity(bootstrap_replicates.num_trees());
+    for tree in 0..bootstrap_replicates.num_trees() {
         result.push(problem.fit_parameters_to_tree(tree));
     }
 
@@ -186,12 +200,14 @@ pub fn fit_model_wls(bp_table: &BpTable) -> Vec<Result<(f64, f64), (f64, f64)>> 
 ///
 /// [``fit_model_wls`]: fit_model_wls
 #[cfg(feature = "rayon")]
-pub fn par_fit_model_wls(bp_table: &BpTable) -> Vec<Result<(f64, f64), (f64, f64)>> {
+pub fn par_fit_model_wls(
+    bootstrap_replicates: &BootstrapReplicates,
+) -> Vec<Result<(f64, f64), (f64, f64)>> {
     use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-    let problem = WlsProblem::new(bp_table);
+    let problem = WlsProblem::new(bootstrap_replicates);
 
-    (0..bp_table.num_trees())
+    (0..bootstrap_replicates.num_trees())
         .into_par_iter()
         .map(|tree| problem.fit_parameters_to_tree(tree))
         .collect()

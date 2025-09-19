@@ -1,15 +1,15 @@
 //! Implementation of datatypes and functions used by the Newton-Raphson solver which estimates
 //! the `c` and `d` values for the AU test.
 
-use crate::BpTable;
+use crate::BootstrapReplicates;
 use crate::au::math::{Matrix2by2, Vec2, cdf, pdf};
 use argmin::core::{Error, Executor, Gradient, Hessian, State};
 use argmin::solver::newton::Newton;
 
-struct NewtonProblem<'tree> {
-    bp_values: &'tree [f64],
-    scales: &'tree [f64],
-    num_replicates: &'tree [usize],
+struct NewtonProblem<'input> {
+    bp_values: &'input [f64],
+    scales: &'input [f64],
+    num_replicates: &'input [usize],
 }
 
 impl<'tree> Gradient for NewtonProblem<'tree> {
@@ -23,7 +23,7 @@ impl<'tree> Gradient for NewtonProblem<'tree> {
     }
 }
 
-impl<'tree> Hessian for NewtonProblem<'tree> {
+impl<'input> Hessian for NewtonProblem<'input> {
     type Param = Vec2;
     type Hessian = Matrix2by2;
 
@@ -37,7 +37,7 @@ impl<'tree> Hessian for NewtonProblem<'tree> {
     }
 }
 
-impl<'tree> NewtonProblem<'tree> {
+impl<'input> NewtonProblem<'input> {
     /// Create a new problem instance, which can be used in a [Newton Solver] to obtain values for the
     /// distance and curvature parameters of the AU test.
     ///
@@ -45,9 +45,9 @@ impl<'tree> NewtonProblem<'tree> {
     ///
     /// [Newton Solver]: argmin::solver::newton::Newton
     pub fn new(
-        bp_values: &'tree [f64],
-        scales: &'tree [f64],
-        num_replicates: &'tree [usize],
+        bp_values: &'input [f64],
+        scales: &'input [f64],
+        num_replicates: &'input [usize],
     ) -> Self {
         Self {
             bp_values,
@@ -62,7 +62,7 @@ impl<'tree> NewtonProblem<'tree> {
         let mut gradient_c = 0.0;
         let mut gradient_d = 0.0;
 
-        for (&bp, (&scale, &num_replicates)) in self
+        for (&count, (&scale, &num_replicates)) in self
             .bp_values
             .iter()
             .zip(self.scales.iter().zip(self.num_replicates))
@@ -72,7 +72,7 @@ impl<'tree> NewtonProblem<'tree> {
             if pi > 0.0 && pi < 1.0 {
                 let scale_root = scale.sqrt();
                 let gradient_core = -pdf(d * scale_root + c / scale_root)
-                    * (num_replicates as f64 * bp - num_replicates as f64 * pi)
+                    * (count - num_replicates as f64 * pi)
                     / (pi * (1.0 - pi));
 
                 gradient_c += gradient_core / scale_root;
@@ -97,11 +97,9 @@ impl<'tree> NewtonProblem<'tree> {
         let mut hessian_cc = 0.0;
         let mut hessian_dc = 0.0;
         let mut hessian_dd = 0.0;
-        for (&bp, (&scale, &num_replicates)) in
+        for (&count, (&scale, &num_replicates)) in
             bp_values.iter().zip(scales.iter().zip(replications))
         {
-            let count = num_replicates as f64 * bp;
-
             let pi = Self::pi_k(c, d, scale);
             if pi > 0.0 && pi < 1.0 {
                 let core = Self::hessian_core(c, d, scale, num_replicates, count);
@@ -158,7 +156,7 @@ impl<'tree> NewtonProblem<'tree> {
 /// # Parameters
 /// - `tree_bp` all BP values for the tree, one for each bootstrap scaling factor
 /// - `scales` the bootstrap scaling factors
-/// - `replicates` the number of bootstrap replicates for each scaling factor
+/// - `replication_counts` the number of bootstrap replicates for each scaling factor
 /// - `c` the initial value for c
 /// - `d` the initial value for d
 ///
@@ -168,13 +166,13 @@ impl<'tree> NewtonProblem<'tree> {
 /// # References
 /// For details refer to https://doi.org/10.1080/10635150290069913, Appendix 9
 pub fn fit_model_to_tree(
-    tree_bp: &[f64],
+    bootstrap_counts: &[f64],
     scales: &[f64],
-    replicates: &[usize],
+    replication_counts: &[usize],
     c: f64,
     d: f64,
 ) -> Result<(f64, f64), Error> {
-    let problem = NewtonProblem::new(tree_bp, scales, replicates);
+    let problem = NewtonProblem::new(bootstrap_counts, scales, replication_counts);
 
     let init = Vec2(c, d);
     let solver = Newton::<f64>::new();
@@ -194,7 +192,8 @@ pub fn fit_model_to_tree(
 /// in the AU p-value estimation using the Newton-Raphson method for many trees.
 ///
 /// # Parameters
-/// - `bp_values` a table containing all bp values for all trees in the AU test
+/// - `bootstrap_replicates` A set of matrices of bootstrap replicates of all input sequences, one
+///   matrix per bootstrap scale.
 /// - `start_params` any iterable that contains a pair of starting parameters for `(c, d)`,
 ///   which are used to start the newton optimization.
 ///
@@ -215,16 +214,16 @@ pub fn fit_model_to_tree(
 /// [`par_fit_model_newton`]: par_fit_model_newton
 /// [`fit_model_wls`]: super::fit_model_wls
 pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
-    bp_values: &BpTable,
+    bootstrap_replicates: &BootstrapReplicates,
     start_params: I,
 ) -> Result<Vec<(f64, f64)>, Error> {
-    (0..bp_values.num_trees())
+    (0..bootstrap_replicates.num_trees())
         .zip(start_params)
         .map(|(tree_index, (c, d))| {
             fit_model_to_tree(
-                bp_values.tree_bp_values(tree_index),
-                bp_values.scales(),
-                bp_values.num_replicates(),
+                &bootstrap_replicates.compute_bp_values(tree_index, 0.0),
+                bootstrap_replicates.scales(),
+                bootstrap_replicates.replication_counts(),
                 c,
                 d,
             )
@@ -238,7 +237,8 @@ pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
 /// thousand trees.
 ///
 /// # Parameters
-/// - `bp_values` a table containing all bp values for all trees in the AU test
+/// - `bootstrap_replicates`: A set of matrices of bootstrap replicates of all input sequences, one
+///   matrix per bootstrap scale.
 /// - `start_params` any iterable that contains a pair of starting parameters for `(c, d)`,
 ///   which are used to start the newton optimization.
 ///
@@ -256,7 +256,7 @@ pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
 /// [`par_fit_model_wls`]: super::par_fit_model_wls
 #[cfg(feature = "rayon")]
 pub fn par_fit_model_newton<I>(
-    bp_values: &BpTable,
+    bootstrap_replicates: &BootstrapReplicates,
     start_params: I,
 ) -> Result<Vec<(f64, f64)>, Error>
 where
@@ -265,14 +265,14 @@ where
 {
     use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
-    (0..bp_values.num_trees())
+    (0..bootstrap_replicates.num_trees())
         .into_par_iter()
         .zip(start_params)
         .map(|(tree_index, (c, d))| {
             fit_model_to_tree(
-                bp_values.tree_bp_values(tree_index),
-                bp_values.scales(),
-                bp_values.num_replicates(),
+                &bootstrap_replicates.compute_bp_values(tree_index, 0.0),
+                bootstrap_replicates.scales(),
+                bootstrap_replicates.replication_counts(),
                 c,
                 d,
             )

@@ -12,7 +12,7 @@
 //! the implementation falls back to a scalar implementation on stable.
 //!
 //! Optionally, the library supports `serde` for its two structures [`SiteLikelihoodTable`] and
-//! [`BpTable`].
+//! [`todo`].
 //!
 //! The library takes pre-parsed log-likelihood vectors as input ([`SiteLikelihoodTable`])
 //! and can therefore be used to apply the AU test to every selection problem that uses the
@@ -109,6 +109,23 @@ pub type SiteLikelihoods = [f64];
 /// length.
 pub type ResamplingWeights = Box<[f64]>;
 
+/// A set of normalized bootstrap replicate likelihood matrices.
+/// More specifically, this struct contains one matrix of bootstrap replicates per scaling factor.
+/// Each matrix contains `B` likelihoods for `N` input sequences,
+/// where `B` is the replication count for the scaling factor of that matrix,
+/// and `N` is the number of input sequences to the bootstrapping.
+///
+/// The likelihood values are normalized, that is, the likelihoods are moved towards zero,
+/// where the best tree of each replicate has likelihood 0, and the other values are the difference
+/// to the best likelihood.
+/// This way, calculating the canonical BP values is equivalent to counting the zeros in each
+/// tree's matrix row.
+/// For more information about calculating BP values, refer to [`compute_bp_values`].
+///
+/// The likelihood vectors of each input sequence have to be sorted.
+/// Writing unsorted sequences into this matrix prevents calculation of BP values.
+///
+/// [`compute_bp_values`]: BootstrapReplicates::compute_bp_values
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct BootstrapReplicates {
@@ -182,6 +199,84 @@ impl BootstrapReplicates {
         self.replicates[scale_index].chunks_exact_mut(num_replicates)
     }
 
+    /// Get access to the bootstrap statistics of the input sequence with index `input_index`
+    /// at all bootstrap scales.
+    pub fn get_vectors(&self, input_index: usize) -> impl Iterator<Item = &[f64]> {
+        self.replicates
+            .iter()
+            .zip(self.replication_counts.iter())
+            .map(move |(matrix, &count)| &matrix[input_index * count..(input_index + 1) * count])
+    }
+
+    /// Compute the Bootstrap Proportions from the empirical bootstrap distribution at the given
+    /// threshold.
+    /// At threshold `0`, the function computes the canonical bootstrap proportions
+    /// where each count is the number of bootstrap replicates where the resampled input yielded the
+    /// maximum likelihood.
+    ///
+    /// To allow accurately estimating the distance of the input's likelihood vector from the
+    /// hypothesis' region boundary (see (<https://doi.org/10.1080/10635150290069913>),
+    /// the BP values are first over-estimated by increasing the threshold.
+    /// Increasing it allows trees which have slightly suboptimal likelihoods
+    /// in a bootstrap replicate to count the replicate as well.
+    /// The BP values then continuously approach the true canonical BP values by lowering the threshold.
+    ///
+    /// This method computes the bootstrap counts of the tree `input_index` while also counting
+    /// bootstrap replicates where the tree has an up to `threshold` lower log-likelihood than the
+    /// best tree in that replicate. Note that the method does not compute proportions, but counts.
+    ///
+    /// To avoid numerical issues during numerical optimization, the count value is interpolated
+    /// to convert the empirical distribution of bootstrap counts into a continuous distribution.
+    ///
+    /// Warning: This method assumes all per-input normalized replicates are sorted in ascending order.
+    /// If the vectors are not sorted, the method returns nonsensical results.
+    ///
+    /// # Parameters
+    /// - `input_index` the index of the input sequence to the AU test for which to compute the BP
+    ///   values.
+    /// - `threshold` the maximum difference in likelihood from the optimal likelihood that a
+    ///   replicate can have to still count towards the Bootstrap Proportion.
+    pub fn compute_bp_values(&self, input_index: usize, threshold: f64) -> Box<[f64]> {
+        self.get_vectors(input_index)
+            .map(|normal_lnl| {
+                let len = normal_lnl.len();
+                let discrete_count = normal_lnl
+                    .iter()
+                    .position(|&x| x > threshold)
+                    .unwrap_or(len);
+                let smoothed = if discrete_count < len - 1 {
+                    if normal_lnl[discrete_count + 1] > normal_lnl[discrete_count] {
+                        0.5 + discrete_count as f64
+                            + (threshold - normal_lnl[discrete_count])
+                                / (normal_lnl[discrete_count + 1] - normal_lnl[discrete_count])
+                    } else {
+                        if discrete_count > 0 {
+                            0.5 + discrete_count as f64
+                        } else {
+                            0.0
+                        }
+                    }
+                } else {
+                    if normal_lnl[len - 1] - normal_lnl[len - 2] > 0.0 {
+                        0.5 + len as f64
+                            + (threshold - normal_lnl[len - 2])
+                                / (normal_lnl[len - 1] - normal_lnl[len])
+                    } else {
+                        len as f64
+                    }
+                };
+
+                if smoothed > len as f64 {
+                    len as f64
+                } else if smoothed < 0.0 {
+                    0.0
+                } else {
+                    smoothed
+                }
+            })
+            .collect()
+    }
+
     /// The number of scaling factors to the multiscale bootstrap process.
     pub fn num_scales(&self) -> usize {
         self.scales.len()
@@ -206,115 +301,6 @@ impl BootstrapReplicates {
     }
 }
 
-/// A matrix containing one or more BP values per input tree, one for each scale factor in the
-/// multiscale bootstrapping process.
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct BpTable {
-    /// A matrix of bootstrap proportions, where each row contains `R` bootstrap proportions per
-    /// tree and there are `N` rows, where `N` is the number of trees.
-    bp_values: Box<[f64]>,
-
-    /// An array of scaling factors. For each factor, each tree generates `B` bootstrap replicates
-    /// with a sequence length equal to the original sequence length multiplied by the factor.
-    /// The number of replicates `B` is stored in [`scales`].
-    scales: Box<[f64]>,
-
-    /// An array with the same size as [`scales`], indicating how many bootstrap replicates each
-    /// tree generates per scaling factor.
-    num_replicates: Box<[usize]>,
-
-    /// Number of rows in the [`bp_values`] matrix.
-    num_trees: usize,
-}
-
-impl BpTable {
-    /// Initialize a new empty BP matrix, initialized with the given array of scales and number
-    /// of replicates.
-    /// The matrix can be initialized with the [`scale_bp_values_mut`] iterator access.
-    ///
-    /// # Parameters
-    /// - `scales` The array of scaling factors that were used during bootstrapping. Each tree has
-    ///   one BP value per scaling factor.
-    /// - `num_replicates` The array of replication numbers, i.e., the `i`-th value indicates how
-    ///   many bootstrap replicates were generated for the `i`-th BP value of each tree.
-    /// - `num_tree` for how many trees the matrix is to be generated.
-    ///
-    /// [`scale_bp_values_mut`]: Self::scale_bp_values_mut
-    pub fn new(scales: Box<[f64]>, num_replicates: Box<[usize]>, num_trees: usize) -> Self {
-        assert_eq!(
-            scales.len(),
-            num_replicates.len(),
-            "Each scale needs an associated number of replicates"
-        );
-
-        Self {
-            bp_values: vec![0.0; num_trees * scales.len()].into_boxed_slice(),
-            scales,
-            num_replicates,
-            num_trees,
-        }
-    }
-
-    /// How many trees are in the table
-    pub fn num_trees(&self) -> usize {
-        self.num_trees
-    }
-
-    /// How many resampling scale factors are in the table
-    pub fn num_scales(&self) -> usize {
-        self.scales.len()
-    }
-
-    /// Get all resampling scale factors that were used in resampling.
-    /// Each tree has one BP value per scale factor.
-    /// There are [`num_scales`] factors in the returned slice.
-    ///
-    /// [`num_scales`]: Self::num_scales
-    pub fn scales(&self) -> &[f64] {
-        &self.scales
-    }
-
-    /// Get all bootstrap replication numbers, one per scaling factor.
-    /// Each tree has one BP value for scaling factor `i` that was calculated from `n` bootstrap
-    /// replicates where `n = self.num_replicates()[i]`.
-    /// There are [`num_scales`] numbers in the returned slice.
-    ///
-    /// The replication numbers are `usize`, for convenient use as an array index, and since each
-    /// bootstrap replicate needs to be stored at some point, they are constrained to the platform's
-    /// address size anyway.
-    ///
-    /// [`num_scales`]: Self::num_scales
-    pub fn num_replicates(&self) -> &[usize] {
-        &self.num_replicates
-    }
-
-    /// Get all BP values for the tree at index `tree`.
-    pub fn tree_bp_values(&self, tree: usize) -> &[f64] {
-        &self.bp_values[self.num_scales() * tree..self.num_scales() * (tree + 1)]
-    }
-
-    /// Get mutable access to all BP values for the tree at index `tree`.
-    pub fn tree_bp_values_mut(&mut self, tree: usize) -> &mut [f64] {
-        let num_scales = self.num_scales();
-        &mut self.bp_values[num_scales * tree..num_scales * (tree + 1)]
-    }
-
-    /// Get access to all BP values for a given scale factor.
-    /// Each tree has one BP value in this iterator, in the order of the trees.
-    pub fn scale_bp_values(&self, scale_index: usize) -> impl Iterator<Item = &f64> + use<'_> {
-        let step = self.num_scales();
-        self.bp_values.iter().skip(scale_index).step_by(step)
-    }
-
-    /// Get mutable access to all BP values for a given scale factor.
-    /// Each tree has one BP value in this iterator, in the order of the trees.
-    pub fn scale_bp_values_mut(&mut self, scale_index: usize) -> impl Iterator<Item = &mut f64> {
-        let step = self.num_scales();
-        self.bp_values.iter_mut().skip(scale_index).step_by(step)
-    }
-}
-
 /// Calculate the AU p-values for a given table of log-likelihoods using the RELL bootstrap method
 /// and subsequent AU test.
 /// This is a convenience method to call bootstrapping and p-value calculation in one call.
@@ -323,7 +309,7 @@ impl BpTable {
 /// - `rng` the random number generator to use for bootstrapping
 /// - `likelihoods` the [`SiteLikelihoodTable`] that contains the log-likelihoods to resample
 /// - `bootstrap_scales` a slice containing the scaling factors for the multiscale bootstrap
-/// - `bootstrap_replicates` a slice containing a number for each scale in `bootstrap_scales`
+/// - `replication_counts` a slice containing a number for each scale in `bootstrap_scales`
 ///   indicating how many replicates to generate for that scale.
 ///
 /// # Return
@@ -333,13 +319,13 @@ pub fn au_test<R>(
     rng: &mut R,
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
-    bootstrap_replicates: &[usize],
+    replication_counts: &[usize],
 ) -> Result<Vec<f64>, argmin_math::Error>
 where
     R: Rng,
 {
-    let bp_table = bp_test(rng, likelihoods, bootstrap_scales, bootstrap_replicates);
-    get_au_value(&bp_table)
+    let bootstrap_replicates = bp_test(rng, likelihoods, bootstrap_scales, replication_counts);
+    get_au_value(&bootstrap_replicates)
 }
 
 /// Calculate the AU p-values for a given table of log-likelihoods using the RELL bootstrap method
@@ -352,7 +338,7 @@ pub fn par_au_test<R>(
     rng: &mut R,
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
-    bootstrap_replicates: &[usize],
+    replication_counts: &[usize],
 ) -> Result<Vec<f64>, argmin_math::Error>
 where
     R: Rng + Clone + Send,
@@ -360,6 +346,6 @@ where
     use crate::au::par_get_au_value;
     use crate::bootstrap::par_bp_test;
 
-    let bp_table = par_bp_test(rng, likelihoods, bootstrap_scales, bootstrap_replicates);
-    par_get_au_value(&bp_table)
+    let bootstrap_replicates = par_bp_test(rng, likelihoods, bootstrap_scales, replication_counts);
+    par_get_au_value(&bootstrap_replicates)
 }

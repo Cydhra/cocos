@@ -208,7 +208,7 @@ fn main() {
     );
 
     let start = Instant::now();
-    let bp_table = if args.threads == 1 {
+    let bootstrap_replicates = if args.threads == 1 {
         bp_test(
             &mut rng,
             &likelihoods,
@@ -225,12 +225,12 @@ fn main() {
     };
     log!("Finished Bootstrapping in {:?}.", start.elapsed());
 
-    let au_values = if bp_table.num_trees() >= 1000 {
+    let au_values = if bootstrap_replicates.num_trees() >= 1000 {
         log!("Estimating necessary parameters in parallel...");
-        par_get_au_value(&bp_table).unwrap()
+        par_get_au_value(&bootstrap_replicates).unwrap()
     } else {
         log!("Not enough trees. Estimating necessary parameters sequentially...");
-        get_au_value(&bp_table).unwrap()
+        get_au_value(&bootstrap_replicates).unwrap()
     };
 
     log!("Total time {:?}", start.elapsed());
@@ -244,12 +244,16 @@ fn main() {
         exit(1);
     });
 
-    output::print_tsv(writer, bp_table.scale_bp_values(5).copied(), au_values).unwrap_or_else(
-        |e| {
-            log!("Failed to write to output file: {}", e);
-            exit(1);
-        },
-    );
+    let canonical_bp_values = (0..bootstrap_replicates.num_trees())
+        .map(|tree| {
+            bootstrap_replicates.compute_bp_values(tree, 0.0)[4]
+                / bootstrap_replicates.replication_counts()[4] as f64
+        })
+        .collect::<Vec<_>>();
+    output::print_tsv(writer, canonical_bp_values, au_values).unwrap_or_else(|e| {
+        log!("Failed to write to output file: {}", e);
+        exit(1);
+    });
 
     log!("Written output to {}.", args.output)
 }
