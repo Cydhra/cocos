@@ -149,8 +149,34 @@ impl<'input> WlsProblem<'input> {
 
 /// Fit curvature (`c`) and signed distance (`d`) parameters to observed bootstrap probabilities
 /// using the Weighted Least Squares method.
-/// The bootstrap values are given in a [`BpTable`] and one pair of parameters is fit per
-/// replicate set (i.e., per tree).
+/// The bootstrap values are given in a vector containing the count values of the input sequence that
+/// is being fit.
+///
+/// # Parameters
+/// - `bp_values` A list of bootstrap count values (i.e., the number of maximum likelihood trees
+///   among all bootstrap replicates), possibly taken from the empirical BP distribution function.
+///
+/// # Return
+/// A `Result<(f64, f64), (f64, f64)>`.
+/// If the regression was calculated successfully, the result is `Ok((c, d))`.
+/// If the regression has no solution, for example because there are not enough BP ratios greater
+/// than zero, an Error with a dummy value is returned.
+/// In this case, the parameters should be estimated using Newton's method with the dummy value
+/// as the initial guess.
+pub fn fit_model_bp_wls(
+    bp_values: &[f64],
+    scales: &[f64],
+    replication_counts: &[usize],
+) -> Result<(f64, f64), (f64, f64)> {
+    let problem = WlsProblem::new(&bp_values, scales, replication_counts);
+    problem.fit_parameters_to_tree()
+}
+
+/// Fit curvature (`c`) and signed distance (`d`) parameters to observed bootstrap probabilities
+/// using the Weighted Least Squares method.
+/// The bootstrap values are given in a [`BootstrapReplicates`] instance and one pair of parameters
+/// is returned per input sequence.
+/// This is a convenience method to call [`fit_model_bp_wls`] for each input sequence.
 ///
 /// # Parameters
 /// - `bootstrap_replicates` A set of matrices of bootstrap replicates of all input sequences, one
@@ -184,13 +210,11 @@ pub fn fit_model_wls(
     let mut result = Vec::with_capacity(bootstrap_replicates.num_trees());
     for tree in 0..bootstrap_replicates.num_trees() {
         let bp_values = bootstrap_replicates.compute_bp_values(tree, 0.0);
-        let problem = WlsProblem::new(
+        result.push(fit_model_bp_wls(
             &bp_values,
             bootstrap_replicates.scales(),
             bootstrap_replicates.replication_counts(),
-        );
-
-        result.push(problem.fit_parameters_to_tree());
+        ));
     }
 
     result
@@ -214,12 +238,11 @@ pub fn par_fit_model_wls(
         .into_par_iter()
         .map(|tree| {
             let bp_values = bootstrap_replicates.compute_bp_values(tree, 0.0);
-            let problem = WlsProblem::new(
+            fit_model_bp_wls(
                 &bp_values,
                 bootstrap_replicates.scales(),
                 bootstrap_replicates.replication_counts(),
-            );
-            problem.fit_parameters_to_tree()
+            )
         })
         .collect()
 }
