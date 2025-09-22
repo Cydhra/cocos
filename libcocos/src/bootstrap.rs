@@ -339,39 +339,6 @@ pub fn par_normalize_replicates(
         });
 }
 
-/// For a matrix of `B` bootstrap replicates for `N` input sequences,
-/// count how often each input sequence has the largest log-likelihood among all sequences in a
-/// replicate.
-/// This constitutes how often the hypothesis that the input object (for example a phylogenetic tree)
-/// is the optimal object to represent the data is fulfilled.
-///
-/// # Parameters
-/// - `bootstrap_replicates` all bootstrap replicates for each tree.
-/// - `num_inputs` the number `N` of input sequences
-///
-/// # Return
-/// A vector indicating for each input sequence how often it has the maximum likelihood within the
-/// bootstrap replicates
-pub fn generate_hypotheses(bootstrap_replicates: &[Box<[f64]>], num_inputs: usize) -> Vec<u32> {
-    let mut bp_vector = vec![0u32; num_inputs];
-
-    bootstrap_replicates.iter().for_each(|rep| {
-        let best_lnl = rep.iter().max_by(|&a, &b| a.total_cmp(b)).unwrap();
-
-        // increase bootstrap count for all variants that are the maximum. Note, it is important
-        // to count all of them to (a) avoid different results when the input is reordered, and
-        // (b) because the 1-hypothesis allows equality (see Formula 3 in Shimodaira, 2002).
-        // TODO verify that this is legal, since now BP values won't add up to 1 anymore.
-        rep.iter().enumerate().for_each(|(i, rep)| {
-            if rep == best_lnl {
-                bp_vector[i] += 1;
-            }
-        })
-    });
-
-    bp_vector
-}
-
 /// Convenience method to perform the multiscale BP-test.
 /// This method calls [`bootstrap`] and [`calc_bootstrap_proportion`] once for each scale in
 /// `bootstrap_scales`, generating a number of replicates as indicated by the corresponding value in
@@ -501,25 +468,6 @@ mod tests {
         let v = generate_selection_vector(&mut rng, 200, 0.5);
         assert_eq!(v.len(), 200);
         assert_eq!(v.iter().sum::<f64>(), 100.0);
-    }
-
-    #[test]
-    fn test_bp_counting() {
-        // test whether the bp counts are computed correctly, handling ties and selecting the maximum
-
-        let replicates = [
-            vec![1.0, 1.0, 1.0].into_boxed_slice(),
-            vec![2.0, 1.0, 1.0].into_boxed_slice(),
-            vec![1.0, 0.5, 1.0].into_boxed_slice(),
-            vec![2.0, 2.0, 1.0].into_boxed_slice(),
-        ];
-
-        let bp = generate_hypotheses(&replicates, 3);
-
-        assert_eq!(bp.len(), 3);
-        assert_eq!(bp[0], 4);
-        assert_eq!(bp[1], 2);
-        assert_eq!(bp[2], 2);
     }
 
     #[test]
