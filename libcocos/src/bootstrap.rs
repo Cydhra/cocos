@@ -296,7 +296,7 @@ pub fn normalize_replicates(
         .get_bootstrap_vectors_mut(scale_index)
         .enumerate()
         .for_each(|(vector_index, vector)| {
-            normalize_replicate_vector(vector, &replicate_likelihoods, &boot_max, vector_index);
+            normalize_replicate_vector(vector, replicate_likelihoods, &boot_max, vector_index);
         });
     bootstrap_replicates
         .get_bootstrap_vectors_mut(scale_index)
@@ -329,7 +329,7 @@ pub fn par_normalize_replicates(
         .enumerate()
         .par_bridge()
         .for_each(|(vector_index, vector)| {
-            normalize_replicate_vector(vector, &replicate_likelihoods, &boot_max, vector_index);
+            normalize_replicate_vector(vector, replicate_likelihoods, &boot_max, vector_index);
         });
     replicate_matrix
         .get_bootstrap_vectors_mut(scale_index)
