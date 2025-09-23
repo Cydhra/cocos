@@ -20,9 +20,12 @@ pub use newton::fit_model_newton;
 #[cfg(feature = "rayon")]
 pub use newton::par_fit_model_newton;
 
+pub mod error;
 mod wls;
+
 pub use wls::fit_model_wls;
 
+use crate::au::error::MathError;
 #[cfg(feature = "rayon")]
 pub use wls::par_fit_model_wls;
 
@@ -44,9 +47,7 @@ pub use wls::par_fit_model_wls;
 /// thousand trees.
 ///
 /// [`BpTable`]: todo
-pub fn get_au_value(
-    bootstrap_replicates: &BootstrapReplicates,
-) -> Result<Vec<f64>, argmin_math::Error> {
+pub fn get_au_value(bootstrap_replicates: &BootstrapReplicates) -> Result<Vec<f64>, MathError> {
     let params = fit_model_wls(bootstrap_replicates);
     let init = params.into_iter().map(|r| r.unwrap_or_else(|dummy| dummy));
 
@@ -68,9 +69,7 @@ pub fn get_au_value(
 ///
 /// [`get_au_value`]: get_au_value
 #[cfg(feature = "rayon")]
-pub fn par_get_au_value(
-    bootstrap_replicates: &BootstrapReplicates,
-) -> Result<Vec<f64>, argmin_math::Error> {
+pub fn par_get_au_value(bootstrap_replicates: &BootstrapReplicates) -> Result<Vec<f64>, MathError> {
     use rayon::prelude::*;
 
     let params = par_fit_model_wls(bootstrap_replicates);

@@ -1,6 +1,7 @@
 //! Implementations of mathematical operations and datatypes required for the numerical algorithms
 //! used by the AU test.
 
+use crate::au::error::MathError;
 use statrs::consts;
 use statrs::function::erf;
 
@@ -17,10 +18,10 @@ impl Vec2 {
 pub(super) struct Matrix2by2(pub f64, pub f64, pub f64, pub f64);
 
 impl Matrix2by2 {
-    pub(crate) fn inv(&self) -> Result<Matrix2by2, argmin_math::Error> {
+    pub(crate) fn inv(&self) -> Result<Matrix2by2, MathError> {
         let det = self.0 * self.3 - self.1 * self.2;
         if det.abs() == 0.0 {
-            println!("warning: hessian is singular");
+            return Err(MathError::HessianSingular);
         }
 
         Ok(Matrix2by2(

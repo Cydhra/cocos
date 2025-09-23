@@ -2,8 +2,8 @@
 //! the `c` and `d` values for the AU test.
 
 use crate::BootstrapReplicates;
+use crate::au::error::MathError;
 use crate::au::math::{Matrix2by2, Vec2, cdf, pdf};
-use argmin::core::Error;
 
 struct NewtonProblem<'input> {
     bp_values: &'input [f64],
@@ -129,7 +129,7 @@ impl<'input> NewtonProblem<'input> {
         Vec2(gradient_c, gradient_d)
     }
 
-    fn hessian(&self, param: &Vec2) -> Result<Matrix2by2, Error> {
+    fn hessian(&self, param: &Vec2) -> Result<Matrix2by2, MathError> {
         let &Vec2(c, d) = param;
 
         let (hess_cc, hess_cd, hess_dd) =
@@ -138,7 +138,7 @@ impl<'input> NewtonProblem<'input> {
         Ok(Matrix2by2(hess_cc, hess_cd, hess_cd, hess_dd))
     }
 
-    fn newton_iter(&self, param: Vec2) -> Result<Vec2, Error> {
+    fn newton_iter(&self, param: Vec2) -> Result<Vec2, MathError> {
         let grad = self.gradient(&param);
         let hessian = self.hessian(&param)?;
         let new_param = param.sub(&hessian.inv()?.dot(&grad));
@@ -167,7 +167,7 @@ pub fn fit_model_to_tree(
     replication_counts: &[usize],
     c: f64,
     d: f64,
-) -> Result<(f64, f64), Error> {
+) -> Result<(f64, f64), MathError> {
     let problem = NewtonProblem::new(bootstrap_counts, scales, replication_counts);
 
     let mut param = Vec2(c, d);
@@ -208,7 +208,7 @@ pub fn fit_model_to_tree(
 pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
     bootstrap_replicates: &BootstrapReplicates,
     start_params: I,
-) -> Result<Vec<(f64, f64)>, Error> {
+) -> Result<Vec<(f64, f64)>, MathError> {
     (0..bootstrap_replicates.num_trees())
         .zip(start_params)
         .map(|(tree_index, (c, d))| {
@@ -220,7 +220,7 @@ pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
                 d,
             )
         })
-        .collect::<Result<Vec<(f64, f64)>, Error>>()
+        .collect::<Result<Vec<(f64, f64)>, MathError>>()
 }
 
 /// Estimate the parameters `d` (signed distance) and `c` (a curvature constant) which are used
@@ -250,7 +250,7 @@ pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
 pub fn par_fit_model_newton<I>(
     bootstrap_replicates: &BootstrapReplicates,
     start_params: I,
-) -> Result<Vec<(f64, f64)>, Error>
+) -> Result<Vec<(f64, f64)>, MathError>
 where
     I: rayon::iter::IntoParallelIterator<Item = (f64, f64)>,
     <I as rayon::iter::IntoParallelIterator>::Iter: rayon::iter::IndexedParallelIterator,
@@ -269,5 +269,5 @@ where
                 d,
             )
         })
-        .collect::<Result<Vec<(f64, f64)>, Error>>()
+        .collect::<Result<Vec<(f64, f64)>, MathError>>()
 }

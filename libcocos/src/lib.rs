@@ -20,6 +20,7 @@
 //!
 //! A separate binary crate with a CLI is available which applies the test to phylogenetic trees.
 
+use crate::au::error::MathError;
 use crate::au::get_au_value;
 use crate::bootstrap::bp_test;
 use rand::Rng;
@@ -320,7 +321,7 @@ pub fn au_test<R>(
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
     replication_counts: &[usize],
-) -> Result<Vec<f64>, argmin_math::Error>
+) -> Result<Vec<f64>, MathError>
 where
     R: Rng,
 {
@@ -339,7 +340,7 @@ pub fn par_au_test<R>(
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
     replication_counts: &[usize],
-) -> Result<Vec<f64>, argmin_math::Error>
+) -> Result<Vec<f64>, MathError>
 where
     R: Rng + Clone + Send,
 {
