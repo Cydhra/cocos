@@ -3,38 +3,12 @@
 
 use crate::BootstrapReplicates;
 use crate::au::math::{Matrix2by2, Vec2, cdf, pdf};
-use argmin::core::{Error, Gradient, Hessian};
-use argmin_math::{ArgminDot, ArgminInv, ArgminScaledSub};
+use argmin::core::Error;
 
 struct NewtonProblem<'input> {
     bp_values: &'input [f64],
     scales: &'input [f64],
     num_replicates: &'input [usize],
-}
-
-impl<'tree> Gradient for NewtonProblem<'tree> {
-    type Param = Vec2;
-    type Gradient = Vec2;
-
-    fn gradient(&self, param: &Self::Param) -> Result<Self::Gradient, argmin_math::Error> {
-        let Vec2(c, d) = *param;
-        let (gradient_c, gradient_d) = self.gradient_sum_function(c, d);
-        Ok(Vec2(gradient_c, gradient_d))
-    }
-}
-
-impl<'input> Hessian for NewtonProblem<'input> {
-    type Param = Vec2;
-    type Hessian = Matrix2by2;
-
-    fn hessian(&self, param: &Self::Param) -> Result<Self::Hessian, Error> {
-        let &Vec2(c, d) = param;
-
-        let (hess_cc, hess_cd, hess_dd) =
-            Self::hessian_sum_function(self.bp_values, self.scales, self.num_replicates, c, d);
-
-        Ok(Matrix2by2(hess_cc, hess_cd, hess_cd, hess_dd))
-    }
 }
 
 impl<'input> NewtonProblem<'input> {
@@ -149,10 +123,25 @@ impl<'input> NewtonProblem<'input> {
                 + linear * (count - num_replicates as f64 * pi_k) / (pi_k * (1.0 - pi_k)))
     }
 
+    fn gradient(&self, param: &Vec2) -> Vec2 {
+        let Vec2(c, d) = *param;
+        let (gradient_c, gradient_d) = self.gradient_sum_function(c, d);
+        Vec2(gradient_c, gradient_d)
+    }
+
+    fn hessian(&self, param: &Vec2) -> Result<Matrix2by2, Error> {
+        let &Vec2(c, d) = param;
+
+        let (hess_cc, hess_cd, hess_dd) =
+            Self::hessian_sum_function(self.bp_values, self.scales, self.num_replicates, c, d);
+
+        Ok(Matrix2by2(hess_cc, hess_cd, hess_cd, hess_dd))
+    }
+
     fn newton_iter(&self, param: Vec2) -> Result<Vec2, Error> {
-        let grad = self.gradient(&param)?;
+        let grad = self.gradient(&param);
         let hessian = self.hessian(&param)?;
-        let new_param = param.scaled_sub(&1.0, &hessian.inv()?.dot(&grad));
+        let new_param = param.sub(&hessian.inv()?.dot(&grad));
         Ok(new_param)
     }
 }
