@@ -3,8 +3,8 @@
 
 use crate::BootstrapReplicates;
 use crate::au::math::{Matrix2by2, Vec2, cdf, pdf};
-use argmin::core::{Error, Executor, Gradient, Hessian, State};
-use argmin::solver::newton::Newton;
+use argmin::core::{Error, Gradient, Hessian};
+use argmin_math::{ArgminDot, ArgminInv, ArgminScaledSub};
 
 struct NewtonProblem<'input> {
     bp_values: &'input [f64],
@@ -148,6 +148,13 @@ impl<'input> NewtonProblem<'input> {
                 / (1.0 - pi_k)
                 + linear * (count - num_replicates as f64 * pi_k) / (pi_k * (1.0 - pi_k)))
     }
+
+    fn newton_iter(&self, param: Vec2) -> Result<Vec2, Error> {
+        let grad = self.gradient(&param)?;
+        let hessian = self.hessian(&param)?;
+        let new_param = param.scaled_sub(&1.0, &hessian.inv()?.dot(&grad));
+        Ok(new_param)
+    }
 }
 
 /// Estimate the parameters `d` (signed distance) and `c` (a curvature constant) which are used
@@ -174,16 +181,12 @@ pub fn fit_model_to_tree(
 ) -> Result<(f64, f64), Error> {
     let problem = NewtonProblem::new(bootstrap_counts, scales, replication_counts);
 
-    let init = Vec2(c, d);
-    let solver = Newton::<f64>::new();
+    let mut param = Vec2(c, d);
+    for _ in 0..30 {
+        param = problem.newton_iter(param)?;
+    }
 
-    let result = Executor::new(problem, solver)
-        .configure(|state| state.param(init).max_iters(30))
-        .run()?;
-
-    let Some(&Vec2(c, d)) = result.state().get_best_param() else {
-        panic!("solver returned None")
-    };
+    let Vec2(c, d) = param;
 
     Ok((c, d))
 }
