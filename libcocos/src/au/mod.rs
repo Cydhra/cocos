@@ -14,7 +14,7 @@ use crate::BootstrapReplicates;
 mod math;
 use crate::au::math::cdf;
 
-mod newton;
+pub mod newton;
 pub use newton::fit_model_newton;
 
 #[cfg(feature = "rayon")]

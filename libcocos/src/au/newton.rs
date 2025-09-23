@@ -5,10 +5,15 @@ use crate::BootstrapReplicates;
 use crate::au::error::MathError;
 use crate::au::math::{Matrix2by2, Vec2, cdf, pdf};
 
-struct NewtonProblem<'input> {
+pub struct NewtonProblem<'input> {
     bp_values: &'input [f64],
     scales: &'input [f64],
     num_replicates: &'input [usize],
+    pub estimate_d: f64,
+    pub estimate_c: f64,
+    standard_error: f64,
+    p_value: f64,
+    degrees_of_freedom: i32,
 }
 
 impl<'input> NewtonProblem<'input> {
@@ -22,11 +27,18 @@ impl<'input> NewtonProblem<'input> {
         bp_values: &'input [f64],
         scales: &'input [f64],
         num_replicates: &'input [usize],
+        init_d: f64,
+        init_c: f64,
     ) -> Self {
         Self {
             bp_values,
             scales,
             num_replicates,
+            estimate_d: init_d,
+            estimate_c: init_c,
+            standard_error: 0.0,
+            p_value: 0.0,
+            degrees_of_freedom: 0,
         }
     }
 
@@ -138,11 +150,62 @@ impl<'input> NewtonProblem<'input> {
         Ok(Matrix2by2(hess_cc, hess_cd, hess_cd, hess_dd))
     }
 
-    fn newton_iter(&self, param: Vec2) -> Result<Vec2, MathError> {
-        let grad = self.gradient(&param);
-        let hessian = self.hessian(&param)?;
-        let new_param = param.sub(&hessian.inv()?.dot(&grad));
-        Ok(new_param)
+    /// Solve the optimization problem using the newton method.
+    /// After the designated
+    pub fn solve(&mut self) -> Result<(), MathError> {
+        let mut param = Vec2(self.estimate_c, self.estimate_d);
+        let mut inv_hessian;
+        let mut counter = 0;
+        loop {
+            let grad = self.gradient(&param);
+            let hessian = self.hessian(&param)?;
+            inv_hessian = hessian.inv()?;
+            param = param.sub(&inv_hessian.dot(&grad));
+
+            counter += 1;
+            if counter >= 30 {
+                break;
+            }
+        }
+
+        // calculate the standard deviation of the current estimator
+        let Vec2(c, d) = param;
+        let derivative = pdf(d - c);
+        self.standard_error = (derivative
+            * derivative
+            * (-inv_hessian.0 - inv_hessian.3 + inv_hessian.1 + inv_hessian.2))
+            .sqrt();
+
+        // calculate the current p-value
+        self.p_value = cdf(-(d - c));
+
+        // determine the degrees of freedom after the optimization, i.e. how many likelihoods aren't zero
+        // minus two required for solving the problem.
+        self.degrees_of_freedom = self
+            .scales
+            .iter()
+            .map(|&scale| NewtonProblem::pi_k(c, d, scale))
+            .filter(|&pi| pi > 0.0 && pi < 1.0)
+            .count() as i32
+            - 2;
+
+        Ok(())
+    }
+
+    pub fn standard_error(&self) -> f64 {
+        self.standard_error
+    }
+
+    pub fn degrees_of_freedom(&self) -> i32 {
+        self.degrees_of_freedom
+    }
+
+    pub fn get_estimate(&self) -> (f64, f64) {
+        (self.estimate_d, self.estimate_c)
+    }
+
+    pub fn p_value(&self) -> f64 {
+        self.p_value
     }
 }
 
@@ -150,7 +213,8 @@ impl<'input> NewtonProblem<'input> {
 /// in the AU p-value estimation using the Newton-Raphson method for a single tree.
 ///
 /// # Parameters
-/// - `tree_bp` all BP values for the tree, one for each bootstrap scaling factor
+/// - `tree_bp`  A list of bootstrap count values (i.e., the number of maximum likelihood trees
+///   among all bootstrap replicates), possibly taken from the empirical BP distribution function.
 /// - `scales` the bootstrap scaling factors
 /// - `replication_counts` the number of bootstrap replicates for each scaling factor
 /// - `c` the initial value for c
@@ -161,23 +225,16 @@ impl<'input> NewtonProblem<'input> {
 ///
 /// # References
 /// For details refer to https://doi.org/10.1080/10635150290069913, Appendix 9
-pub fn fit_model_to_tree(
+pub fn fit_model_bp_newton(
     bootstrap_counts: &[f64],
     scales: &[f64],
     replication_counts: &[usize],
     c: f64,
     d: f64,
 ) -> Result<(f64, f64), MathError> {
-    let problem = NewtonProblem::new(bootstrap_counts, scales, replication_counts);
-
-    let mut param = Vec2(c, d);
-    for _ in 0..30 {
-        param = problem.newton_iter(param)?;
-    }
-
-    let Vec2(c, d) = param;
-
-    Ok((c, d))
+    let mut problem = NewtonProblem::new(bootstrap_counts, scales, replication_counts, d, c);
+    problem.solve()?;
+    Ok((problem.estimate_c, problem.estimate_d))
 }
 
 /// Estimate the parameters `d` (signed distance) and `c` (a curvature constant) which are used
@@ -212,13 +269,14 @@ pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
     (0..bootstrap_replicates.num_trees())
         .zip(start_params)
         .map(|(tree_index, (c, d))| {
-            fit_model_to_tree(
+            let result = fit_model_bp_newton(
                 &bootstrap_replicates.compute_bp_values(tree_index, 0.0),
                 bootstrap_replicates.scales(),
                 bootstrap_replicates.replication_counts(),
                 c,
                 d,
-            )
+            )?;
+            Ok(result)
         })
         .collect::<Result<Vec<(f64, f64)>, MathError>>()
 }
@@ -261,13 +319,14 @@ where
         .into_par_iter()
         .zip(start_params)
         .map(|(tree_index, (c, d))| {
-            fit_model_to_tree(
+            let result = fit_model_bp_newton(
                 &bootstrap_replicates.compute_bp_values(tree_index, 0.0),
                 bootstrap_replicates.scales(),
                 bootstrap_replicates.replication_counts(),
                 c,
                 d,
-            )
+            )?;
+            Ok(result)
         })
         .collect::<Result<Vec<(f64, f64)>, MathError>>()
 }
