@@ -154,27 +154,21 @@ impl<'input> NewtonProblem<'input> {
     /// After the designated
     pub fn solve(&mut self) -> Result<(), MathError> {
         let mut param = Vec2(self.estimate_c, self.estimate_d);
-        let mut inv_hessian;
-        let mut counter = 0;
-        loop {
+        for _ in (0..30) {
             let grad = self.gradient(&param);
             let hessian = self.hessian(&param)?;
-            inv_hessian = hessian.inv()?;
-            param = param.sub(&inv_hessian.dot(&grad));
-
-            counter += 1;
-            if counter >= 30 {
-                break;
-            }
+            param = param.sub(&hessian.inv()?.dot(&grad));
         }
 
         // calculate the standard deviation of the current estimator
         let Vec2(c, d) = param;
+        self.estimate_d = d;
+        self.estimate_c = c;
+
         let derivative = pdf(d - c);
-        self.standard_error = (derivative
-            * derivative
-            * (-inv_hessian.0 - inv_hessian.3 + inv_hessian.1 + inv_hessian.2))
-            .sqrt();
+        let fisher = self.hessian(&param)?.inv()?;
+        self.standard_error =
+            (derivative * derivative * (-fisher.0 - fisher.3 + fisher.1 + fisher.2)).sqrt();
 
         // calculate the current p-value
         self.p_value = cdf(-(d - c));

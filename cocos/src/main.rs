@@ -1,5 +1,5 @@
 use clap::*;
-use libcocos::au::{get_au_value, par_get_au_value};
+use libcocos::au::get_au_value;
 use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES, bp_test, par_bp_test};
 use rand::{RngCore, SeedableRng, rng};
 use rand_chacha::ChaCha8Rng;
@@ -227,7 +227,7 @@ fn main() {
 
     let au_values = if bootstrap_replicates.num_trees() >= 1000 {
         log!("Estimating necessary parameters in parallel...");
-        par_get_au_value(&bootstrap_replicates).unwrap()
+        get_au_value(&bootstrap_replicates).unwrap()
     } else {
         log!("Not enough trees. Estimating necessary parameters sequentially...");
         get_au_value(&bootstrap_replicates).unwrap()
