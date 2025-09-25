@@ -62,7 +62,7 @@ pub fn get_tree_au_value(
     let mut last_degrees_of_freedom = 0;
     let mut target_threshold = 0.0;
 
-    for _ in 0..50 {
+    for _ in 0..100 {
         let bp_values = bootstrap_replicates.compute_bp_values(tree, threshold);
 
         let params = fit_model_bp_wls(
@@ -106,10 +106,10 @@ pub fn get_tree_au_value(
         if (p_value - last_p_value).abs() < 0.01 * last_error {
             // we have reached stability, test whether the threshold is already close to the
             // target. if so, just do it with the intended threshold, otherwise return
-            if (threshold < 1e-10) {
+            if (threshold - target_threshold).abs() < 1e-10 {
                 last_p_value = p_value;
                 last_error = error;
-                threshold = 0.0;
+                threshold = target_threshold;
                 last_degrees_of_freedom = df;
                 continue;
             } else {
