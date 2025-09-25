@@ -5,6 +5,9 @@ use crate::BootstrapReplicates;
 use crate::au::error::MathError;
 use crate::au::math::{Matrix2by2, Vec2, cdf, pdf};
 
+/// Number of iterations of the newton method until we assume convergence
+const NEWTON_ITERATIONS: usize = 30;
+
 pub struct NewtonProblem<'input> {
     bp_values: &'input [f64],
     scales: &'input [f64],
@@ -154,10 +157,21 @@ impl<'input> NewtonProblem<'input> {
     /// After the designated
     pub fn solve(&mut self) -> Result<(), MathError> {
         let mut param = Vec2(self.estimate_c, self.estimate_d);
-        for _ in 0..30 {
+        let mut old_param;
+        for _ in 0..NEWTON_ITERATIONS {
+            old_param = param.clone();
             let grad = self.gradient(&param);
             let hessian = self.hessian(&param);
-            param = param.sub(&hessian.inv()?.dot(&grad));
+            let inv = hessian.inv();
+            if let Ok(inv) = inv {
+                param = param.sub(&inv.dot(&grad));
+            } else {
+                // we have reached a flat point, which we interpret as convergence of the newton
+                // algorithm. We use the last non-degenerate parameter as the final one
+                // because we want to use the variance of the hessian later in the analysis
+                param = old_param;
+                break;
+            }
         }
 
         // calculate the standard deviation of the current estimator
@@ -166,9 +180,16 @@ impl<'input> NewtonProblem<'input> {
         self.estimate_c = c;
 
         let derivative = pdf(d - c);
-        let fisher = self.hessian(&param).inv()?;
-        self.standard_error =
-            (derivative * derivative * (-fisher.0 - fisher.3 + fisher.1 + fisher.2)).sqrt();
+        let variance = self.hessian(&param).inv();
+        if let Ok(variance) = variance {
+            self.standard_error =
+                (derivative * derivative * (-variance.0 - variance.3 + variance.1 + variance.2))
+                    .sqrt();
+        } else {
+            // if the hessian isn't invertible, newton analysis converged and we just continue with
+            // the previous error.
+            debug_assert!(matches!(variance, Err(MathError::HessianSingular)))
+        }
 
         // calculate the current p-value
         self.p_value = cdf(-(d - c));
