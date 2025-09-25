@@ -61,9 +61,8 @@ pub fn get_tree_au_value(
     let mut last_threshold = 0.0;
     let mut last_degrees_of_freedom = 0;
     let mut target_threshold = 0.0;
-    let mut loop_count = 0;
 
-    loop {
+    for _ in 0..50 {
         let bp_values = bootstrap_replicates.compute_bp_values(tree, threshold);
 
         let params = fit_model_bp_wls(
@@ -99,14 +98,6 @@ pub fn get_tree_au_value(
             // from crossing the non-monotone region again
             target_threshold = threshold;
             threshold = 0.5 * threshold + 0.5 * last_threshold;
-            loop_count += 1;
-
-            // TODO this shouldnt be necessary because eventually we should exit from
-            //  this condition and don't get stuck in it
-            if loop_count > 50 {
-                // TODO warn about failed convergence
-                return Ok(problem.p_value());
-            }
             continue;
         }
 
@@ -135,13 +126,10 @@ pub fn get_tree_au_value(
         if threshold < 1e-10 {
             return Ok(problem.p_value());
         }
-
-        loop_count += 1;
-        if loop_count > 50 {
-            // TODO warn about failed convergence
-            return Ok(problem.p_value());
-        }
     }
+
+    // TODO warn about failed convergence
+    Ok(last_p_value)
 }
 
 /// Perform the AU test on all inputs in the [`BootstrapReplicates`]. This method fits parameters with
