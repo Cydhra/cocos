@@ -120,8 +120,9 @@ pub fn get_tree_au_value(
         }
     }
 
-    // TODO warn about failed convergence
-    Ok(-last_p_value)
+    Err(MathError::ConvergenceFailed {
+        p_value: -last_p_value,
+    })
 }
 
 /// Perform the AU test on all inputs in the [`BootstrapReplicates`]. This method fits parameters with
@@ -142,7 +143,7 @@ pub fn get_tree_au_value(
 /// thousand trees.
 ///
 /// [`BpTable`]: todo
-pub fn get_au_value(bootstrap_replicates: &BootstrapReplicates) -> Result<Vec<f64>, MathError> {
+pub fn get_au_value(bootstrap_replicates: &BootstrapReplicates) -> Box<[Result<f64, MathError>]> {
     let (closest_scale, num_replicates) = select_threshold_element(bootstrap_replicates);
 
     (0..bootstrap_replicates.num_trees)
@@ -172,7 +173,9 @@ pub fn get_au_value(bootstrap_replicates: &BootstrapReplicates) -> Result<Vec<f6
 ///
 /// [`get_au_value`]: get_au_value
 #[cfg(feature = "rayon")]
-pub fn par_get_au_value(bootstrap_replicates: &BootstrapReplicates) -> Result<Vec<f64>, MathError> {
+pub fn par_get_au_value(
+    bootstrap_replicates: &BootstrapReplicates,
+) -> Box<[Result<f64, MathError>]> {
     use rayon::prelude::*;
     let (closest_scale, num_replicates) = select_threshold_element(bootstrap_replicates);
 

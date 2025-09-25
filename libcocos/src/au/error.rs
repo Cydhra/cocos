@@ -4,6 +4,7 @@ use std::fmt::{Display, Formatter};
 #[derive(Debug)]
 pub enum MathError {
     HessianSingular,
+    ConvergenceFailed { p_value: f64 },
 }
 
 impl Display for MathError {
@@ -11,6 +12,9 @@ impl Display for MathError {
         match self {
             MathError::HessianSingular => {
                 write!(f, "Hessian matrix is singular")
+            }
+            MathError::ConvergenceFailed { .. } => {
+                write!(f, "Convergence of likelihood function failed")
             }
         }
     }

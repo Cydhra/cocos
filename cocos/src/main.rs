@@ -1,4 +1,5 @@
 use clap::*;
+use libcocos::au::error::MathError;
 use libcocos::au::{get_au_value, par_get_au_value};
 use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES, bp_test, par_bp_test};
 use rand::{RngCore, SeedableRng, rng};
@@ -227,11 +228,29 @@ fn main() {
 
     let au_values = if bootstrap_replicates.num_trees() >= 1000 {
         log!("Estimating necessary parameters in parallel...");
-        par_get_au_value(&bootstrap_replicates).unwrap()
+        par_get_au_value(&bootstrap_replicates)
     } else {
         log!("Not enough trees. Estimating necessary parameters sequentially...");
-        get_au_value(&bootstrap_replicates).unwrap()
+        get_au_value(&bootstrap_replicates)
     };
+
+    let au_values = au_values
+        .iter()
+        .enumerate()
+        .map(|(i, result)| match result {
+            Ok(p_value) => *p_value,
+            Err(error) => match error {
+                MathError::HessianSingular => {
+                    log!("Error: Failed to calculate p-value for tree {i}: {}", error);
+                    0.0
+                }
+                MathError::ConvergenceFailed { p_value } => {
+                    log!("Warning: likelihood function for tree {i} did not converge.");
+                    *p_value
+                }
+            },
+        })
+        .collect::<Box<[_]>>();
 
     log!("Total time {:?}", start.elapsed());
     log!(

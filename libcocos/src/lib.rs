@@ -321,7 +321,7 @@ pub fn au_test<R>(
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
     replication_counts: &[usize],
-) -> Result<Vec<f64>, MathError>
+) -> Box<[Result<f64, MathError>]>
 where
     R: Rng,
 {
@@ -340,7 +340,7 @@ pub fn par_au_test<R>(
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
     replication_counts: &[usize],
-) -> Result<Vec<f64>, MathError>
+) -> Box<[Result<f64, MathError>]>
 where
     R: Rng + Clone + Send,
 {
