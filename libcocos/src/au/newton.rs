@@ -8,12 +8,12 @@ use crate::au::math::{Matrix2by2, Vec2, cdf, pdf};
 /// Number of iterations of the newton method until we assume convergence
 const NEWTON_ITERATIONS: usize = 30;
 
-pub struct NewtonProblem<'input> {
+pub(crate) struct NewtonProblem<'input> {
     bp_values: &'input [f64],
     scales: &'input [f64],
     num_replicates: &'input [usize],
-    pub estimate_d: f64,
-    pub estimate_c: f64,
+    estimate_d: f64,
+    estimate_c: f64,
     standard_error: f64,
     p_value: f64,
     degrees_of_freedom: i32,
@@ -26,7 +26,7 @@ impl<'input> NewtonProblem<'input> {
     /// For details refer to https://doi.org/10.1080/10635150290069913 Appendix 9.
     ///
     /// [Newton Solver]: argmin::solver::newton::Newton
-    pub fn new(
+    pub(crate) fn new(
         bp_values: &'input [f64],
         scales: &'input [f64],
         num_replicates: &'input [usize],
@@ -176,8 +176,6 @@ impl<'input> NewtonProblem<'input> {
 
         // store the estimates for c and d
         let Vec2(c, d) = param;
-        self.estimate_d = d;
-        self.estimate_c = c;
 
         // calculate the standard deviation of the current estimator
         let derivative = pdf(d - c);
@@ -213,10 +211,6 @@ impl<'input> NewtonProblem<'input> {
 
     pub fn degrees_of_freedom(&self) -> i32 {
         self.degrees_of_freedom
-    }
-
-    pub fn get_estimate(&self) -> (f64, f64) {
-        (self.estimate_d, self.estimate_c)
     }
 
     pub fn p_value(&self) -> f64 {
