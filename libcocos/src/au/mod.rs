@@ -6,8 +6,8 @@
 //! [`get_au_value`], which will return a p-value for each tree in the table.
 //! When using the `rayon` feature, the corresponding function is called [`par_get_au_value`]
 //!
-//! [`get_au_value`]: get_au_value
-//! [`par_get_au_value`]: par_get_au_value
+//! [`get_au_value`]: get_au_values
+//! [`par_get_au_value`]: par_get_au_values
 
 use crate::{BootstrapReplicates, EPSILON};
 
@@ -42,7 +42,32 @@ fn select_threshold_element(bootstrap_replicates: &BootstrapReplicates) -> (usiz
     (closest_scale, num_replicates)
 }
 
-pub fn get_tree_au_value(
+/// Perform the AU test on one input of the [`BootstrapReplicates`] instance.
+///
+/// The method begins fitting the signed distance and curvature parameters of the bootstrap input
+/// vector using the [WLS method].
+/// The parameters are then used as starting values for a [Newton optimization] which obtains the
+/// final p-value.
+/// Additionally, this is repeated at different quantiles of the empirical distribution of
+/// Bootstrap Proportions.
+/// The p-values at different quantiles are compared and the function returns the p-value if
+/// it converges at a final value.
+///
+/// If the p-value does not converge, a [`MathError::ConvergenceFailed`] error is returned.
+///
+/// # Parameters
+/// - `bootstrap_replicates`: A set of matrices of bootstrap replicates of all input sequences, one
+///   matrix per bootstrap scale.
+/// - `tree` the index of the input sequence in `bootstrap_replicates`
+/// - `initial_threshold` the bootstrap count at the quantile at which the algorithm starts. A good
+///   candidate for this parameter is the median bootstrap count at scaling factor 1.
+///
+/// # Result
+/// Returns the p-value of the given input sequence or a [`MathError`] is the algorithm encountered
+/// an unsolvable edge case.
+/// The `MathError` may still contain a p-value.
+/// It is left to the application designer to decide whether this p-value can be trusted.
+pub fn calc_au_value(
     bootstrap_replicates: &BootstrapReplicates,
     tree: usize,
     initial_threshold: f64,
@@ -114,25 +139,39 @@ pub fn get_tree_au_value(
     })
 }
 
-/// Perform the AU test on all inputs in the [`BootstrapReplicates`]. This method fits parameters with
-/// [`fit_model_wls`] to obtain starting values for a Newton optimizer that obtains the final values
-/// for the parameters.
+/// Perform the AU test on all inputs in the [`BootstrapReplicates`] instance.
 ///
-/// The parameters are then transformed into the final p-value for the AU test and returned in a
-/// vector (same order as the input table).
+/// The method begins fitting the signed distance and curvature parameters of any bootstrap
+/// vector using the [WLS method].
+/// The parameters are then used as starting values for a [Newton optimization] which obtains the
+/// final values.
+/// Additionally, this is repeated at different quantiles of the empirical distribution of
+/// Bootstrap Proportions.
+/// The p-values at different quantiles are compared and the function returns the p-value if
+/// it converges at a final value.
+///
+/// If the p-value does not converge, a [`MathError::ConvergenceFailed`] error is returned.
 ///
 /// # Parameters
 /// - `bootstrap_replicates`: A set of matrices of bootstrap replicates of all input sequences, one
 ///   matrix per bootstrap scale.
 ///
+/// # Return
+/// Returns a list of p-values or [`MathErrors`] that describe the problem with the test.
+/// Many `MathErrors` still contain a p-value.
+/// It is left to the application designer to decide whether those p-values can be trusted.
+///
 /// # Parallelization
 /// A parallel version of this function is available with the `rayon` feature as
-/// [`par_get_au_value`].
+/// [`par_get_au_values`].
 /// Note that this step is so fast that parallelization is usually worth it only at several
 /// thousand trees.
 ///
-/// [`BpTable`]: todo
-pub fn get_au_value(bootstrap_replicates: &BootstrapReplicates) -> Box<[Result<f64, MathError>]> {
+/// [WLS method]: fit_model_bp_wls
+/// [Newton optimization]: newton::fit_model_bp_newton
+/// [`MathError::ConvergenceFailed`]: MathError::ConvergenceFailed
+/// [`MathErrors`]: MathError
+pub fn get_au_values(bootstrap_replicates: &BootstrapReplicates) -> Box<[Result<f64, MathError>]> {
     let (closest_scale, num_replicates) = select_threshold_element(bootstrap_replicates);
 
     (0..bootstrap_replicates.num_trees)
@@ -143,13 +182,13 @@ pub fn get_au_value(bootstrap_replicates: &BootstrapReplicates) -> Box<[Result<f
                 .nth(closest_scale)
                 .unwrap()[num_replicates / 2];
 
-            get_tree_au_value(bootstrap_replicates, tree, threshold)
+            calc_au_value(bootstrap_replicates, tree, threshold)
         })
         .collect()
 }
 
-/// Perform the AU test on all trees in the [``] in parallel. //TODO
-/// For full documentation see [`get_au_value`].
+/// Perform the AU test on all trees in the [`BootstrapReplicates`] instance in parallel.
+/// For full documentation see [`get_au_values`].
 ///
 /// # Parallelization
 /// This method uses the global rayon thread pool.
@@ -160,9 +199,9 @@ pub fn get_au_value(bootstrap_replicates: &BootstrapReplicates) -> Box<[Result<f
 /// - `bootstrap_replicates`: A set of matrices of bootstrap replicates of all input sequences, one
 ///   matrix per bootstrap scale.
 ///
-/// [`get_au_value`]: get_au_value
+/// [`get_au_values`]: get_au_values
 #[cfg(feature = "rayon")]
-pub fn par_get_au_value(
+pub fn par_get_au_values(
     bootstrap_replicates: &BootstrapReplicates,
 ) -> Box<[Result<f64, MathError>]> {
     use rayon::prelude::*;
@@ -176,7 +215,7 @@ pub fn par_get_au_value(
                 .nth(closest_scale)
                 .unwrap()[num_replicates / 2];
 
-            get_tree_au_value(bootstrap_replicates, tree, threshold)
+            calc_au_value(bootstrap_replicates, tree, threshold)
         })
         .collect()
 }

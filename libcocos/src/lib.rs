@@ -21,7 +21,7 @@
 //! A separate binary crate with a CLI is available which applies the test to phylogenetic trees.
 
 use crate::au::error::MathError;
-use crate::au::get_au_value;
+use crate::au::get_au_values;
 use crate::bootstrap::bp_test;
 use rand::Rng;
 use std::ops::{Index, IndexMut};
@@ -330,7 +330,7 @@ where
     R: Rng,
 {
     let bootstrap_replicates = bp_test(rng, likelihoods, bootstrap_scales, replication_counts);
-    get_au_value(&bootstrap_replicates)
+    get_au_values(&bootstrap_replicates)
 }
 
 /// Calculate the AU p-values for a given table of log-likelihoods using the RELL bootstrap method
@@ -348,9 +348,9 @@ pub fn par_au_test<R>(
 where
     R: Rng + Clone + Send,
 {
-    use crate::au::par_get_au_value;
+    use crate::au::par_get_au_values;
     use crate::bootstrap::par_bp_test;
 
     let bootstrap_replicates = par_bp_test(rng, likelihoods, bootstrap_scales, replication_counts);
-    par_get_au_value(&bootstrap_replicates)
+    par_get_au_values(&bootstrap_replicates)
 }

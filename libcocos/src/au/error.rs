@@ -1,3 +1,7 @@
+//! The library's error type.
+//! The type comprises all possible mathematical errors and edge cases which could compromise the
+//! test results.
+
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
