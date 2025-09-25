@@ -14,21 +14,13 @@ use crate::{BootstrapReplicates, EPSILON};
 mod math;
 
 pub mod newton;
-pub use newton::fit_model_newton;
-
-#[cfg(feature = "rayon")]
-pub use newton::par_fit_model_newton;
 
 pub mod error;
 mod wls;
 
-pub use wls::fit_model_wls;
-
 use crate::au::error::MathError;
 use crate::au::newton::NewtonProblem;
 use crate::au::wls::fit_model_bp_wls;
-#[cfg(feature = "rayon")]
-pub use wls::par_fit_model_wls;
 
 /// Select the scaling factor of a [`BootstrapReplicates`] instance that is closest to 1, and
 /// return its index and its [replication count].

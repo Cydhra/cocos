@@ -1,8 +1,8 @@
 //! This module solves the WLS problem for the AU test. Since the problem only has two parameters,
 //! we can solve the matrix analytically and need not use a numerical solution.
 
+use crate::EPSILON;
 use crate::au::math::{pdf, quantile};
-use crate::{BootstrapReplicates, EPSILON};
 
 /// Problem instance for the weighted least squares regression that fits curvature and signed
 /// distance to the observed BP values.
@@ -170,79 +170,4 @@ pub fn fit_model_bp_wls(
 ) -> Result<(f64, f64), (f64, f64)> {
     let problem = WlsProblem::new(&bp_values, scales, replication_counts);
     problem.fit_parameters_to_tree()
-}
-
-/// Fit curvature (`c`) and signed distance (`d`) parameters to observed bootstrap probabilities
-/// using the Weighted Least Squares method.
-/// The bootstrap values are given in a [`BootstrapReplicates`] instance and one pair of parameters
-/// is returned per input sequence.
-/// This is a convenience method to call [`fit_model_bp_wls`] for each input sequence.
-///
-/// # Parameters
-/// - `bootstrap_replicates` A set of matrices of bootstrap replicates of all input sequences, one
-///   matrix per bootstrap scale.
-/// - `threshold` The threshold to use for evaluating bootstrap proportions, where a threshold of
-///   zero means canonical BP values.
-///
-/// # Return
-/// A vector of `Result<(f64, f64), (f64, f64)>`.
-/// If the regression was calculated successfully, the result is `Ok((c, d))`.
-/// If the regression has no solution, for example because there are not enough BP ratios greater
-/// than zero, an Error with a dummy value is returned.
-/// In this case, the parameters should be estimated using Newton's method with the dummy value
-/// as the initial guess.
-///
-/// # Parallel Fitting
-/// A parallel version of this function is available with the `rayon` feature.
-/// Note that this step is so fast that parallelization is usually worth it only at several
-/// thousand trees.
-///
-/// # References
-/// For details refer to <https://doi.org/10.1080/10635150290069913>.
-///
-/// See also [`fit_model_newton`].
-///
-/// [`BpTable`]: BpTable
-/// [`fit_model_newton`]: super::fit_model_newton
-pub fn fit_model_wls(
-    bootstrap_replicates: &BootstrapReplicates,
-) -> Vec<Result<(f64, f64), (f64, f64)>> {
-    let mut result = Vec::with_capacity(bootstrap_replicates.num_trees());
-    for tree in 0..bootstrap_replicates.num_trees() {
-        let bp_values = bootstrap_replicates.compute_bp_values(tree, 0.0);
-        result.push(fit_model_bp_wls(
-            &bp_values,
-            bootstrap_replicates.scales(),
-            bootstrap_replicates.replication_counts(),
-        ));
-    }
-
-    result
-}
-
-/// Fit curvature (`c`) and signed distance (`d`) parameters to observed bootstrap probabilities
-/// using the Weighted Least Squares method in parallel.
-/// Note that this step is so fast that parallelization is usually worth it only at several
-/// thousand trees.
-///
-/// For a full explanation, see [`fit_model_wls`].
-///
-/// [``fit_model_wls`]: fit_model_wls
-#[cfg(feature = "rayon")]
-pub fn par_fit_model_wls(
-    bootstrap_replicates: &BootstrapReplicates,
-) -> Vec<Result<(f64, f64), (f64, f64)>> {
-    use rayon::iter::{IntoParallelIterator, ParallelIterator};
-
-    (0..bootstrap_replicates.num_trees())
-        .into_par_iter()
-        .map(|tree| {
-            let bp_values = bootstrap_replicates.compute_bp_values(tree, 0.0);
-            fit_model_bp_wls(
-                &bp_values,
-                bootstrap_replicates.scales(),
-                bootstrap_replicates.replication_counts(),
-            )
-        })
-        .collect()
 }

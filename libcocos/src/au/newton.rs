@@ -1,7 +1,6 @@
 //! Implementation of datatypes and functions used by the Newton-Raphson solver which estimates
 //! the `c` and `d` values for the AU test.
 
-use crate::BootstrapReplicates;
 use crate::au::error::MathError;
 use crate::au::math::{Matrix2by2, Vec2, cdf, pdf};
 
@@ -244,98 +243,4 @@ pub fn fit_model_bp_newton(
     let mut problem = NewtonProblem::new(bootstrap_counts, scales, replication_counts, d, c);
     problem.solve();
     Ok((problem.estimate_c, problem.estimate_d))
-}
-
-/// Estimate the parameters `d` (signed distance) and `c` (a curvature constant) which are used
-/// in the AU p-value estimation using the Newton-Raphson method for many trees.
-///
-/// # Parameters
-/// - `bootstrap_replicates` A set of matrices of bootstrap replicates of all input sequences, one
-///   matrix per bootstrap scale.
-/// - `start_params` any iterable that contains a pair of starting parameters for `(c, d)`,
-///   which are used to start the newton optimization.
-///
-/// # Parallelization
-/// A parallel version of this function is available with the `rayon` feature as
-/// [`par_fit_model_newton`].
-/// Note that this step is so fast that parallelization is usually worth it only at several
-/// thousand trees.
-///
-/// # Return
-/// Returns a vector of tuples containing the `c` and `d` value estimates for each tree.
-///
-/// # References
-/// For details refer to <https://doi.org/10.1080/10635150290069913>, Appendix 9
-///
-/// See also [`fit_model_wls`].
-///
-/// [`par_fit_model_newton`]: par_fit_model_newton
-/// [`fit_model_wls`]: super::fit_model_wls
-pub fn fit_model_newton<I: IntoIterator<Item = (f64, f64)>>(
-    bootstrap_replicates: &BootstrapReplicates,
-    start_params: I,
-) -> Result<Vec<(f64, f64)>, MathError> {
-    (0..bootstrap_replicates.num_trees())
-        .zip(start_params)
-        .map(|(tree_index, (c, d))| {
-            let result = fit_model_bp_newton(
-                &bootstrap_replicates.compute_bp_values(tree_index, 0.0),
-                bootstrap_replicates.scales(),
-                bootstrap_replicates.replication_counts(),
-                c,
-                d,
-            )?;
-            Ok(result)
-        })
-        .collect::<Result<Vec<(f64, f64)>, MathError>>()
-}
-
-/// Estimate the parameters `d` (signed distance) and `c` (a curvature constant) which are used
-/// in the AU p-value estimation using the Newton-Raphson method for many trees in parallel.
-/// Note that this step is so fast that parallelization is usually worth it only at several
-/// thousand trees.
-///
-/// # Parameters
-/// - `bootstrap_replicates`: A set of matrices of bootstrap replicates of all input sequences, one
-///   matrix per bootstrap scale.
-/// - `start_params` any iterable that contains a pair of starting parameters for `(c, d)`,
-///   which are used to start the newton optimization.
-///
-/// # Return
-/// Returns a vector of tuples containing the `c` and `d` value estimates for each tree.
-///
-/// # Parallelization
-/// This method uses the global rayon thread pool.
-///
-/// # References
-/// For details refer to <https://doi.org/10.1080/10635150290069913>, Appendix 9
-///
-/// See also [`par_fit_model_wls`].
-///
-/// [`par_fit_model_wls`]: super::par_fit_model_wls
-#[cfg(feature = "rayon")]
-pub fn par_fit_model_newton<I>(
-    bootstrap_replicates: &BootstrapReplicates,
-    start_params: I,
-) -> Result<Vec<(f64, f64)>, MathError>
-where
-    I: rayon::iter::IntoParallelIterator<Item = (f64, f64)>,
-    <I as rayon::iter::IntoParallelIterator>::Iter: rayon::iter::IndexedParallelIterator,
-{
-    use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
-
-    (0..bootstrap_replicates.num_trees())
-        .into_par_iter()
-        .zip(start_params)
-        .map(|(tree_index, (c, d))| {
-            let result = fit_model_bp_newton(
-                &bootstrap_replicates.compute_bp_values(tree_index, 0.0),
-                bootstrap_replicates.scales(),
-                bootstrap_replicates.replication_counts(),
-                c,
-                d,
-            )?;
-            Ok(result)
-        })
-        .collect::<Result<Vec<(f64, f64)>, MathError>>()
 }
