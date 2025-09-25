@@ -80,15 +80,12 @@ pub fn get_tree_au_value(
         );
         problem.solve();
 
-        let df = problem.degrees_of_freedom();
-        let error = problem.standard_error();
-
-        let p_value = -problem.p_value();
+        let p_value = problem.p_value();
 
         // check whether our likelihood is unsolvable, or
-        if df < 0
+        if problem.degrees_of_freedom() < 0
             // whether the p value is decreasing despite the threshold also decreasing
-            || ((p_value - last_p_value) * (threshold - last_threshold) > 0.0
+            || ((last_p_value - p_value) * (threshold - last_threshold) > 0.0
             // while the change in p-value is significant (i.e., larger than standard error)
             && (p_value - last_p_value).abs() > 0.1 * last_error
             // and the function was fine before
@@ -103,7 +100,7 @@ pub fn get_tree_au_value(
 
         last_threshold = threshold;
 
-        if (p_value - last_p_value).abs() < 0.01 * last_error {
+        if (last_p_value - p_value).abs() < 0.01 * last_error {
             // we have reached convergence of the p-value
             return Ok(problem.p_value());
         } else {
@@ -111,8 +108,8 @@ pub fn get_tree_au_value(
         }
 
         last_p_value = p_value;
-        last_error = error;
-        last_degrees_of_freedom = df;
+        last_error = problem.standard_error();
+        last_degrees_of_freedom = problem.degrees_of_freedom();
 
         if (threshold - target_threshold).abs() < 1e-10 {
             // we have reached the canonical BP value
@@ -121,7 +118,7 @@ pub fn get_tree_au_value(
     }
 
     Err(MathError::ConvergenceFailed {
-        p_value: -last_p_value,
+        p_value: last_p_value,
     })
 }
 
