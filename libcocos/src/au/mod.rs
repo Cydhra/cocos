@@ -9,7 +9,7 @@
 //! [`get_au_value`]: get_au_value
 //! [`par_get_au_value`]: par_get_au_value
 
-use crate::BootstrapReplicates;
+use crate::{BootstrapReplicates, EPSILON};
 
 mod math;
 
@@ -111,7 +111,7 @@ pub fn get_tree_au_value(
         last_error = problem.standard_error();
         last_degrees_of_freedom = problem.degrees_of_freedom();
 
-        if (threshold - target_threshold).abs() < 1e-10 {
+        if (threshold - target_threshold).abs() < EPSILON {
             // we have reached the canonical BP value
             return Ok(problem.p_value());
         }

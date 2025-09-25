@@ -1,8 +1,8 @@
 //! This module solves the WLS problem for the AU test. Since the problem only has two parameters,
 //! we can solve the matrix analytically and need not use a numerical solution.
 
-use crate::BootstrapReplicates;
 use crate::au::math::{pdf, quantile};
+use crate::{BootstrapReplicates, EPSILON};
 
 /// Problem instance for the weighted least squares regression that fits curvature and signed
 /// distance to the observed BP values.
@@ -66,7 +66,7 @@ impl<'input> WlsProblem<'input> {
         let mut non_zero_observations = 0;
         for (scale_index, &count) in self.bp_values.iter().enumerate() {
             let bp = count / self.replication_counts[scale_index] as f64;
-            if bp < 1E-16 {
+            if bp < EPSILON {
                 // guard against division by zero, both weight and distance is observed
                 // to be zero in those cases
                 continue;

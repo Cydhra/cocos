@@ -32,6 +32,10 @@ pub mod bootstrap;
 
 pub(crate) mod vectors;
 
+/// An epsilon for tests for zero. Values smaller than this value are considered to be zero. Note
+/// that this is not the machine precision, and has been chosen arbitrarily.
+pub(crate) const EPSILON: f64 = 1e-16;
+
 /// A table containing the per-site (log-)likelihoods of `N` phylogenetic trees, with `M` alignment
 /// sites each. The table is used during bootstrap to generate bootstrap replicates of the alignment
 /// quickly.
