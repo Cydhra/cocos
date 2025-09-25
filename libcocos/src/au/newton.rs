@@ -141,22 +141,22 @@ impl<'input> NewtonProblem<'input> {
         Vec2(gradient_c, gradient_d)
     }
 
-    fn hessian(&self, param: &Vec2) -> Result<Matrix2by2, MathError> {
+    fn hessian(&self, param: &Vec2) -> Matrix2by2 {
         let &Vec2(c, d) = param;
 
         let (hess_cc, hess_cd, hess_dd) =
             Self::hessian_sum_function(self.bp_values, self.scales, self.num_replicates, c, d);
 
-        Ok(Matrix2by2(hess_cc, hess_cd, hess_cd, hess_dd))
+        Matrix2by2(hess_cc, hess_cd, hess_cd, hess_dd)
     }
 
     /// Solve the optimization problem using the newton method.
     /// After the designated
     pub fn solve(&mut self) -> Result<(), MathError> {
         let mut param = Vec2(self.estimate_c, self.estimate_d);
-        for _ in (0..30) {
+        for _ in 0..30 {
             let grad = self.gradient(&param);
-            let hessian = self.hessian(&param)?;
+            let hessian = self.hessian(&param);
             param = param.sub(&hessian.inv()?.dot(&grad));
         }
 
@@ -166,7 +166,7 @@ impl<'input> NewtonProblem<'input> {
         self.estimate_c = c;
 
         let derivative = pdf(d - c);
-        let fisher = self.hessian(&param)?.inv()?;
+        let fisher = self.hessian(&param).inv()?;
         self.standard_error =
             (derivative * derivative * (-fisher.0 - fisher.3 + fisher.1 + fisher.2)).sqrt();
 
