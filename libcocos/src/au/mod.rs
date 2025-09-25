@@ -104,17 +104,8 @@ pub fn get_tree_au_value(
         last_threshold = threshold;
 
         if (p_value - last_p_value).abs() < 0.01 * last_error {
-            // we have reached stability, test whether the threshold is already close to the
-            // target. if so, just do it with the intended threshold, otherwise return
-            if (threshold - target_threshold).abs() < 1e-10 {
-                last_p_value = p_value;
-                last_error = error;
-                threshold = target_threshold;
-                last_degrees_of_freedom = df;
-                continue;
-            } else {
-                return Ok(problem.p_value());
-            }
+            // we have reached convergence of the p-value
+            return Ok(problem.p_value());
         } else {
             threshold = 0.5 * threshold + 0.5 * target_threshold;
         }
@@ -124,6 +115,7 @@ pub fn get_tree_au_value(
         last_degrees_of_freedom = df;
 
         if (threshold - target_threshold).abs() < 1e-10 {
+            // we have reached the canonical BP value
             return Ok(problem.p_value());
         }
     }
