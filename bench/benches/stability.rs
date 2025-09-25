@@ -3,6 +3,7 @@
 //! and verify that the p-values do not differ significantly (in the first 9 decimal places).
 
 use bench::{load_from_path, resample_lnl_vectors};
+use libcocos::au::error::MathError;
 use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES};
 use libcocos::{SiteLikelihoodTable, par_au_test};
 use rand::SeedableRng;
@@ -19,10 +20,20 @@ fn main() -> anyhow::Result<()> {
         let site_lh = load_from_path(path)?;
 
         println!("Performing au test...");
-        let p_values = au_test(&site_lh)?;
+        let p_values = au_test(&site_lh)
+            .into_iter()
+            .map(|x| match x {
+                Ok(p) => p,
+                Err(MathError::ConvergenceFailed { p_value }) => p_value,
+                _ => {
+                    assert!(false, "AU Test failed with error: {}", x.unwrap_err());
+                    unreachable!()
+                }
+            })
+            .collect::<Vec<_>>();
 
         for i in 0..NUM_PERMUTATIONS {
-            println!("Shuffling site-likelihoods {}/{NUM_PERMUTATIONS}...", i + 1);
+            println!("Shuffling input trees {}/{NUM_PERMUTATIONS}...", i + 1);
             // for reproducibility of the results, we fix the seed
             let mut rng = ChaCha8Rng::from_seed([i as u8; 32]);
             let mut permutation = (0..site_lh.num_trees()).collect::<Vec<_>>();
@@ -30,7 +41,17 @@ fn main() -> anyhow::Result<()> {
 
             println!("Performing au test...");
             let new_input = resample_lnl_vectors(&site_lh, &permutation);
-            let new_p_values = au_test(&new_input)?;
+            let new_p_values = au_test(&new_input)
+                .into_iter()
+                .map(|x| match x {
+                    Ok(p) => p,
+                    Err(MathError::ConvergenceFailed { p_value }) => p_value,
+                    _ => {
+                        assert!(false, "AU Test failed with error: {}", x.unwrap_err());
+                        unreachable!()
+                    }
+                })
+                .collect::<Vec<_>>();
 
             println!("Comparing results...");
             for (index, &permuted_index) in permutation.iter().enumerate() {
@@ -48,7 +69,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-fn au_test(likelihoods: &SiteLikelihoodTable) -> anyhow::Result<Vec<f64>> {
+fn au_test(likelihoods: &SiteLikelihoodTable) -> Box<[Result<f64, MathError>]> {
     let mut rng = ChaCha8Rng::seed_from_u64(1);
     par_au_test(&mut rng, likelihoods, &DEFAULT_FACTORS, &DEFAULT_REPLICATES)
 }
