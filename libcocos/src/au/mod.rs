@@ -123,7 +123,7 @@ pub fn get_tree_au_value(
         last_error = error;
         last_degrees_of_freedom = df;
 
-        if threshold < 1e-10 {
+        if (threshold - target_threshold).abs() < 1e-10 {
             return Ok(problem.p_value());
         }
     }
