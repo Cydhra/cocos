@@ -78,7 +78,7 @@ pub fn get_tree_au_value(
             d,
             c,
         );
-        problem.solve()?;
+        problem.solve();
 
         let df = problem.degrees_of_freedom();
         let error = problem.standard_error();

@@ -155,7 +155,7 @@ impl<'input> NewtonProblem<'input> {
 
     /// Solve the optimization problem using the newton method.
     /// After the designated
-    pub fn solve(&mut self) -> Result<(), MathError> {
+    pub fn solve(&mut self) {
         let mut param = Vec2(self.estimate_c, self.estimate_d);
         let mut old_param;
         for _ in 0..NEWTON_ITERATIONS {
@@ -174,11 +174,12 @@ impl<'input> NewtonProblem<'input> {
             }
         }
 
-        // calculate the standard deviation of the current estimator
+        // store the estimates for c and d
         let Vec2(c, d) = param;
         self.estimate_d = d;
         self.estimate_c = c;
 
+        // calculate the standard deviation of the current estimator
         let derivative = pdf(d - c);
         let variance = self.hessian(&param).inv();
         if let Ok(variance) = variance {
@@ -195,7 +196,8 @@ impl<'input> NewtonProblem<'input> {
         self.p_value = cdf(-(d - c));
 
         // determine the degrees of freedom after the optimization, i.e. how many likelihoods aren't zero
-        // minus two required for solving the problem.
+        // minus two required for solving the problem. A result less than 0 means the problem is
+        // degenerate
         self.degrees_of_freedom = self
             .scales
             .iter()
@@ -203,8 +205,6 @@ impl<'input> NewtonProblem<'input> {
             .filter(|&pi| pi > 0.0 && pi < 1.0)
             .count() as i32
             - 2;
-
-        Ok(())
     }
 
     pub fn standard_error(&self) -> f64 {
@@ -248,7 +248,7 @@ pub fn fit_model_bp_newton(
     d: f64,
 ) -> Result<(f64, f64), MathError> {
     let mut problem = NewtonProblem::new(bootstrap_counts, scales, replication_counts, d, c);
-    problem.solve()?;
+    problem.solve();
     Ok((problem.estimate_c, problem.estimate_d))
 }
 
