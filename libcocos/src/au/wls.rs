@@ -168,6 +168,6 @@ pub fn fit_model_bp_wls(
     scales: &[f64],
     replication_counts: &[usize],
 ) -> Result<(f64, f64), (f64, f64)> {
-    let problem = WlsProblem::new(&bp_values, scales, replication_counts);
+    let problem = WlsProblem::new(bp_values, scales, replication_counts);
     problem.fit_parameters_to_tree()
 }

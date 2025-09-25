@@ -175,7 +175,6 @@ pub fn get_au_values(bootstrap_replicates: &BootstrapReplicates) -> Box<[Result<
     let (closest_scale, num_replicates) = select_threshold_element(bootstrap_replicates);
 
     (0..bootstrap_replicates.num_trees)
-        .into_iter()
         .map(|tree| {
             let threshold = bootstrap_replicates
                 .get_vectors(tree)

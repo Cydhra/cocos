@@ -254,21 +254,17 @@ impl BootstrapReplicates {
                         0.5 + discrete_count as f64
                             + (threshold - normal_lnl[discrete_count])
                                 / (normal_lnl[discrete_count + 1] - normal_lnl[discrete_count])
+                    } else if discrete_count > 0 {
+                        0.5 + discrete_count as f64
                     } else {
-                        if discrete_count > 0 {
-                            0.5 + discrete_count as f64
-                        } else {
-                            0.0
-                        }
+                        0.0
                     }
+                } else if normal_lnl[len - 1] - normal_lnl[len - 2] > 0.0 {
+                    0.5 + len as f64
+                        + (threshold - normal_lnl[len - 2])
+                            / (normal_lnl[len - 1] - normal_lnl[len])
                 } else {
-                    if normal_lnl[len - 1] - normal_lnl[len - 2] > 0.0 {
-                        0.5 + len as f64
-                            + (threshold - normal_lnl[len - 2])
-                                / (normal_lnl[len - 1] - normal_lnl[len])
-                    } else {
-                        len as f64
-                    }
+                    len as f64
                 };
 
                 if smoothed > len as f64 {

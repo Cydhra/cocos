@@ -217,12 +217,7 @@ fn main() {
             &DEFAULT_REPLICATES,
         )
     } else {
-        par_bp_test(
-            &mut rng,
-            &likelihoods,
-            &DEFAULT_FACTORS,
-            &DEFAULT_REPLICATES,
-        )
+        par_bp_test(&rng, &likelihoods, &DEFAULT_FACTORS, &DEFAULT_REPLICATES)
     };
     log!("Finished Bootstrapping in {:?}.", start.elapsed());
 
