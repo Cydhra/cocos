@@ -129,7 +129,7 @@ pub fn get_tree_au_value(
     }
 
     // TODO warn about failed convergence
-    Ok(last_p_value)
+    Ok(-last_p_value)
 }
 
 /// Perform the AU test on all inputs in the [`BootstrapReplicates`]. This method fits parameters with
