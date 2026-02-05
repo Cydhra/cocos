@@ -56,9 +56,11 @@ impl<'input> WlsProblem<'input> {
     /// and now fit `c` and `d` to `Pr = cdf(d * sqrt(scale) + c / sqrt(scale))`.
     ///
     /// # Return
-    /// Returns Ok((c, d)) if the regression was computed successfully, or Err((0.0, 0.0)) if there
-    /// is no solution.
-    fn fit_parameters_to_tree(&self) -> Result<(f64, f64), (f64, f64)> {
+    /// Returns Ok((c, d)) if the regression was computed successfully, or Ok((0.0, 0.0)) if there
+    /// is no solution but no collapse of the problem has occurred.
+    /// If the problem has collapsed because the degrees of freedom are too low to infer the parameters,
+    /// the degrees of freedom are returned in an Err(usize).
+    fn fit_parameters_to_tree(&self) -> Result<(f64, f64), usize> {
         // compute weights and observed distances
         let mut observed_distances = vec![0.0; self.num_scales()].into_boxed_slice();
         let mut weight_vector = vec![0.0; self.num_scales()].into_boxed_slice();
@@ -80,7 +82,7 @@ impl<'input> WlsProblem<'input> {
 
         // we can't compute estimates if bp is zero.
         if non_zero_observations < 2 {
-            return Err((0.0, 0.0));
+            return Err(non_zero_observations);
         }
 
         // compute weighted model matrix
@@ -132,7 +134,7 @@ impl<'input> WlsProblem<'input> {
 
         let determinant = model_d * model_c - off_diagonal * off_diagonal;
         if determinant.abs() == 0.0 {
-            return Err((0.0, 0.0));
+            return Ok((0.0, 0.0));
         }
 
         let estimate_d = (model_c * observed_d - off_diagonal * observed_c) / determinant;
@@ -167,7 +169,7 @@ pub fn fit_model_bp_wls(
     bp_values: &[f64],
     scales: &[f64],
     replication_counts: &[usize],
-) -> Result<(f64, f64), (f64, f64)> {
+) -> Result<(f64, f64), usize> {
     let problem = WlsProblem::new(bp_values, scales, replication_counts);
     problem.fit_parameters_to_tree()
 }

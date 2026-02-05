@@ -87,50 +87,59 @@ pub fn calc_au_value(
             bootstrap_replicates.scales(),
             bootstrap_replicates.replication_counts(),
         );
-        let (c, d) = params.unwrap_or_else(|dummy| dummy);
-        let mut problem = NewtonProblem::new(
-            &bp_values,
-            bootstrap_replicates.scales(),
-            bootstrap_replicates.replication_counts(),
-            d,
-            c,
-        );
-        problem.solve();
 
-        let p_value = problem.p_value();
+        if let Ok((c, d)) = params {
+            let mut problem = NewtonProblem::new(
+                &bp_values,
+                bootstrap_replicates.scales(),
+                bootstrap_replicates.replication_counts(),
+                d,
+                c,
+            );
+            problem.solve();
 
-        // check whether our likelihood is unsolvable, or
-        if problem.degrees_of_freedom() < 0
-            // whether the p value is decreasing despite the threshold also decreasing
-            || ((last_p_value - p_value) * (threshold - last_threshold) > 0.0
-            // while the change in p-value is significant (i.e., larger than standard error)
-            && (p_value - last_p_value).abs() > 0.1 * last_error
-            // and the function was fine before
-            && last_degrees_of_freedom >= 0)
-        {
+            let p_value = problem.p_value();
+
+            // check whether our likelihood is unsolvable, or
+            if problem.degrees_of_freedom() < 0
+                // whether the p value is decreasing despite the threshold also decreasing
+                || ((last_p_value - p_value) * (threshold - last_threshold) > 0.0
+                // while the change in p-value is significant (i.e., larger than standard error)
+                && (p_value - last_p_value).abs() > 0.1 * last_error
+                // and the function was fine before
+                && last_degrees_of_freedom >= 0)
+            {
+                // turn back a bit toward the previous threshold and prevent the threshold
+                // from crossing the non-monotone region again
+                target_threshold = threshold;
+                threshold = 0.5 * threshold + 0.5 * last_threshold;
+                continue;
+            }
+
+            last_threshold = threshold;
+
+            if (last_p_value - p_value).abs() < 0.01 * last_error {
+                // we have reached convergence of the p-value
+                return Ok(problem.p_value());
+            } else {
+                threshold = 0.5 * threshold + 0.5 * target_threshold;
+            }
+
+            last_p_value = p_value;
+            last_error = problem.standard_error();
+            last_degrees_of_freedom = problem.degrees_of_freedom();
+
+            if (threshold - target_threshold).abs() < EPSILON {
+                // we have reached the canonical BP value
+                return Ok(problem.p_value());
+            }
+        } else {
+            // WLS collapsed
             // turn back a bit toward the previous threshold and prevent the threshold
             // from crossing the non-monotone region again
             target_threshold = threshold;
             threshold = 0.5 * threshold + 0.5 * last_threshold;
             continue;
-        }
-
-        last_threshold = threshold;
-
-        if (last_p_value - p_value).abs() < 0.01 * last_error {
-            // we have reached convergence of the p-value
-            return Ok(problem.p_value());
-        } else {
-            threshold = 0.5 * threshold + 0.5 * target_threshold;
-        }
-
-        last_p_value = p_value;
-        last_error = problem.standard_error();
-        last_degrees_of_freedom = problem.degrees_of_freedom();
-
-        if (threshold - target_threshold).abs() < EPSILON {
-            // we have reached the canonical BP value
-            return Ok(problem.p_value());
         }
     }
 
