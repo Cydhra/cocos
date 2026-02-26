@@ -4,9 +4,11 @@
 //! of cocos' output is outside the confidence interval of consel's mean output.
 
 use csv::Trim;
+use libcocos::au_test;
+use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES};
 use rstest::*;
 use std::fs::{File, create_dir};
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
@@ -15,6 +17,7 @@ const NUM_SAMPLES: usize = 10;
 /// Consel output is saved to a CSV file with these five values per record. The records in the file
 /// are sorted by rank, not by item.
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct ConselRecord {
     rank: usize,
     item: usize,
@@ -46,21 +49,15 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     let scratch_dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(file_name);
     let _ = create_dir(&scratch_dir);
 
-    // read how many trees we have from the siteLH file
-    let mut reader = BufReader::new(File::open(&site_likelihoods).expect("cannot read fixture"));
-    let mut header = String::new();
-    reader
-        .read_line(&mut header)
-        .expect("cannot read site-likelihood file header");
-    let num_trees: usize = header
-        .split(" ")
-        .nth(0)
-        .expect("malformed site-likelihood file: empty header")
-        .parse()
-        .expect("malformed site-likelihood file: invalid number of trees");
-    drop(reader);
+    // read site-likelihoods
+    let per_site_lnl = cocos_parse::parse_puzzle(BufReader::new(
+        File::open(&site_likelihoods).expect("cannot read fixture"),
+    ))
+    .expect("cannot parse siteLH file");
+    let num_trees = per_site_lnl.num_trees();
 
-    let mut samples = vec![Vec::new(); num_trees];
+    let mut consel_mean = vec![0.0; num_trees];
+    let mut consel_variance = vec![0.0; num_trees];
 
     // run consel NUM_SAMPLES times and collect results
     for i in 0..NUM_SAMPLES {
@@ -77,17 +74,18 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         );
 
         let mut result_file = run.clone();
-        result_file.set_extension(".csv");
+        result_file.set_extension("csv");
 
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(true)
             .trim(Trim::Fields)
-            .from_reader(File::open(result_file).expect("cannot open consel output"));
+            .from_reader(File::open(&result_file).expect("cannot open consel output "));
 
         // read in the results and store them in the samples
         for record in reader.deserialize::<ConselRecord>() {
             let record = record.expect("malformed consel output");
-            samples[record.item].push(record.au);
+            consel_mean[record.item - 1] += record.au;
+            consel_variance[record.item - 1] += record.au * record.au;
         }
     }
 }
