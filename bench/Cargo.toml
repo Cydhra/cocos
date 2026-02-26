@@ -9,3 +9,5 @@ cocos-parse = { path = "../cocos-parse" }
 
 [dev-dependencies]
 rstest = "0.26.1"
+csv = "1.4.0"
+serde = { version = "1.0.228", features = ["derive"] }

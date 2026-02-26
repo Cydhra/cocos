@@ -1,0 +1,93 @@
+//! A test case which runs the available data files against consel and libcocos and tests whether
+//! the libcocos outputs have the same distribution as the consel outputs.
+//! It does so by doing two one-sided t-tests that attempt to reject the hypothesis that the mean
+//! of cocos' output is outside the confidence interval of consel's mean output.
+
+use csv::Trim;
+use rstest::*;
+use std::fs::{File, create_dir};
+use std::io::{BufRead, BufReader};
+use std::path::{Path, PathBuf};
+use std::process::{Command, ExitStatus};
+
+const NUM_SAMPLES: usize = 10;
+
+/// Consel output is saved to a CSV file with these five values per record. The records in the file
+/// are sorted by rank, not by item.
+#[derive(Debug, serde::Deserialize)]
+struct ConselRecord {
+    rank: usize,
+    item: usize,
+    obs: f64,
+    au: f64,
+    np: f64,
+}
+
+#[rstest]
+fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
+    // get environment
+    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let script_dir = repository_root.join("scripts");
+    let consel_script = script_dir.join("runconsel.sh");
+    let mut file_name = site_likelihoods
+        .file_name()
+        .expect("test called with invalid fixture")
+        .to_str()
+        .expect("file name is not representable");
+
+    // create directory for the consel output of this site-likelihood file
+    if site_likelihoods.extension().is_some() {
+        let suffix = format!(
+            ".{}",
+            site_likelihoods.extension().unwrap().to_str().unwrap()
+        );
+        file_name = file_name.strip_suffix(&suffix).unwrap();
+    }
+    let scratch_dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(file_name);
+    let _ = create_dir(&scratch_dir);
+
+    // read how many trees we have from the siteLH file
+    let mut reader = BufReader::new(File::open(&site_likelihoods).expect("cannot read fixture"));
+    let mut header = String::new();
+    reader
+        .read_line(&mut header)
+        .expect("cannot read site-likelihood file header");
+    let num_trees: usize = header
+        .split(" ")
+        .nth(0)
+        .expect("malformed site-likelihood file: empty header")
+        .parse()
+        .expect("malformed site-likelihood file: invalid number of trees");
+    drop(reader);
+
+    let mut samples = vec![Vec::new(); num_trees];
+
+    // run consel NUM_SAMPLES times and collect results
+    for i in 0..NUM_SAMPLES {
+        let run = scratch_dir.join(format!("run{}", i));
+        let output = Command::new(&consel_script)
+            .arg(&site_likelihoods)
+            .arg(&run)
+            .output()
+            .expect("failed to run consel");
+        assert_eq!(
+            output.status,
+            ExitStatus::default(),
+            "consel script did not finish successfully"
+        );
+
+        let mut result_file = run.clone();
+        result_file.set_extension(".csv");
+
+        let mut reader = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .trim(Trim::Fields)
+            .from_reader(File::open(result_file).expect("cannot open consel output"));
+
+        // read in the results and store them in the samples
+        for record in reader.deserialize::<ConselRecord>() {
+            let record = record.expect("malformed consel output");
+            samples[record.item].push(record.au);
+        }
+    }
+}
