@@ -101,16 +101,18 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     let mut cocos_variance = vec![0.0; num_trees];
 
     let mut rng = rand::rng();
-    let p_values = au_test(
-        &mut rng,
-        &per_site_lnl,
-        &DEFAULT_FACTORS,
-        &DEFAULT_REPLICATES,
-    );
-    for (item, result) in p_values.iter().enumerate() {
-        let au = result.as_ref().expect("calculating AU value failed");
-        cocos_mean[item] += au;
-        cocos_variance[item] = au * au;
+    for _ in 0..NUM_SAMPLES {
+        let p_values = au_test(
+            &mut rng,
+            &per_site_lnl,
+            &DEFAULT_FACTORS,
+            &DEFAULT_REPLICATES,
+        );
+        for (item, result) in p_values.iter().enumerate() {
+            let au = result.as_ref().expect("calculating AU value failed");
+            cocos_mean[item] += au;
+            cocos_variance[item] += au * au;
+        }
     }
 
     // calculate mean and variance
@@ -120,7 +122,7 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         cocos_variance[i] -= cocos_mean[i] * cocos_mean[i];
 
         println!(
-            "{}: consel mean: {}, var: {}\t-\tcocos mean: {}, var: {}",
+            "item {}: consel mean: {}, var: {}\t-\tcocos mean: {}, var: {}",
             i, consel_mean[i], consel_variance[i], cocos_mean[i], cocos_variance[i]
         );
     }
