@@ -5,13 +5,11 @@
 
 use csv::Trim;
 use libcocos::au_test;
-use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES};
 use rstest::*;
 use statrs::distribution::{ContinuousCDF, StudentsT};
-use std::fs::{File, create_dir};
+use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus};
 
 /**
  * Number of p-values taken from consel and cocos to estimate the distribution of p-values for fixed
@@ -45,8 +43,6 @@ struct ConselRecord {
 fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     // get environment
     let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"));
-    let script_dir = repository_root.join("scripts");
-    let consel_script = script_dir.join("runconsel.sh");
     let mut file_name = site_likelihoods
         .file_name()
         .expect("test called with invalid fixture")
@@ -61,8 +57,6 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         );
         file_name = file_name.strip_suffix(&suffix).unwrap();
     }
-    let scratch_dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(file_name);
-    let _ = create_dir(&scratch_dir);
 
     // read site-likelihoods
     let per_site_lnl = cocos_parse::parse_puzzle(BufReader::new(
@@ -74,27 +68,17 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     let mut consel_mean = vec![0.0; num_trees];
     let mut consel_variance = vec![0.0; num_trees];
 
-    // run consel NUM_SAMPLES times and collect results
-    for i in 0..NUM_SAMPLES {
-        let run = scratch_dir.join(format!("run{}", i));
-        let output = Command::new(&consel_script)
-            .arg(&site_likelihoods)
-            .arg(&run)
-            .output()
-            .expect("failed to run consel");
-        assert_eq!(
-            output.status,
-            ExitStatus::default(),
-            "consel script did not finish successfully"
-        );
+    // read consel results
+    let data_dir = repository_root.join("data");
+    let consel_dir = data_dir.join(file_name);
 
-        let mut result_file = run.clone();
-        result_file.set_extension("csv");
+    for i in 0..NUM_SAMPLES {
+        let result_file = consel_dir.join(format!("run{}.csv", i));
 
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(true)
             .trim(Trim::Fields)
-            .from_reader(File::open(&result_file).expect("cannot open consel output "));
+            .from_reader(File::open(&result_file).expect("cannot open consel output"));
 
         // read in the results and store them in the samples
         for record in reader.deserialize::<ConselRecord>() {
@@ -116,13 +100,14 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     let mut cocos_variance = vec![0.0; num_trees];
 
     let mut rng = rand::rng();
+    const FACTORS: [f64; 11] = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5];
+    const REPLICATES: [usize; 11] = [
+        100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000,
+        100_000,
+    ];
+
     for _ in 0..NUM_SAMPLES {
-        let p_values = au_test(
-            &mut rng,
-            &per_site_lnl,
-            &DEFAULT_FACTORS,
-            &DEFAULT_REPLICATES,
-        );
+        let p_values = au_test(&mut rng, &per_site_lnl, &FACTORS, &REPLICATES);
         for (item, result) in p_values.iter().enumerate() {
             let au = result.as_ref().expect("calculating AU value failed");
             cocos_mean[item] += au;
