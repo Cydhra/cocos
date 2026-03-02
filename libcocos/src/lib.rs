@@ -260,9 +260,9 @@ impl BootstrapReplicates {
                         0.0
                     }
                 } else if normal_lnl[len - 1] - normal_lnl[len - 2] > 0.0 {
-                    0.5 + len as f64
-                        + (threshold - normal_lnl[len - 2])
-                            / (normal_lnl[len - 1] - normal_lnl[len])
+                    len as f64 - 0.5
+                        + (threshold - normal_lnl[len - 1])
+                            / (normal_lnl[len - 1] - normal_lnl[len - 2])
                 } else {
                     len as f64
                 };
