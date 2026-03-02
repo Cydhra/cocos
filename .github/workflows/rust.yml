@@ -21,8 +21,6 @@ jobs:
       with:
         toolchain: nightly
         override: true
-    - name: Build
-      run: cargo build --verbose --all-features
     - name: Run tests
       run: cargo test --verbose --all-features --lib
 
@@ -32,7 +30,5 @@ jobs:
       RUSTFLAGS: -C target-cpu=x86-64
     steps:
       - uses: actions/checkout@v4
-      - name: Build
-        run: cargo build -p libcocos --verbose --features serde
       - name: Run tests
         run: cargo test -p libcocos --verbose --features serde --lib
