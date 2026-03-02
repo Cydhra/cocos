@@ -252,7 +252,11 @@ impl BootstrapReplicates {
 
                 let smoothed = if discrete_count < len {
                     if discrete_count == 0 {
-                        0.0
+                        if normal_lnl[1] > normal_lnl[0] {
+                            0.5 + (threshold - normal_lnl[0]) / (normal_lnl[1] - normal_lnl[0])
+                        } else {
+                            0.0
+                        }
                     } else if normal_lnl[discrete_count] > normal_lnl[discrete_count - 1] {
                         -0.5 + discrete_count as f64
                             + (threshold - normal_lnl[discrete_count - 1])
