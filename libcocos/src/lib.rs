@@ -249,15 +249,16 @@ impl BootstrapReplicates {
                     .iter()
                     .position(|&x| x > threshold)
                     .unwrap_or(len);
-                let smoothed = if discrete_count < len - 1 {
-                    if normal_lnl[discrete_count + 1] > normal_lnl[discrete_count] {
-                        0.5 + discrete_count as f64
-                            + (threshold - normal_lnl[discrete_count])
-                                / (normal_lnl[discrete_count + 1] - normal_lnl[discrete_count])
-                    } else if discrete_count > 0 {
-                        0.5 + discrete_count as f64
-                    } else {
+
+                let smoothed = if discrete_count < len {
+                    if discrete_count == 0 {
                         0.0
+                    } else if normal_lnl[discrete_count] > normal_lnl[discrete_count - 1] {
+                        -0.5 + discrete_count as f64
+                            + (threshold - normal_lnl[discrete_count - 1])
+                                / (normal_lnl[discrete_count] - normal_lnl[discrete_count - 1])
+                    } else {
+                        0.5 + discrete_count as f64
                     }
                 } else if normal_lnl[len - 1] - normal_lnl[len - 2] > 0.0 {
                     len as f64 - 0.5
