@@ -258,10 +258,19 @@ fn main() {
         exit(1);
     });
 
+    // select scale closest to 1
+    let closest_scale = bootstrap_replicates
+        .scales()
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| (1.0 - *a).abs().total_cmp(&(1.0 - *b).abs()))
+        .unwrap()
+        .0;
+
     let canonical_bp_values = (0..bootstrap_replicates.num_trees())
         .map(|tree| {
-            bootstrap_replicates.compute_bp_values(tree, 0.0)[4]
-                / bootstrap_replicates.replication_counts()[4] as f64
+            bootstrap_replicates.compute_bp_values(tree, 0.0)[closest_scale]
+                / bootstrap_replicates.replication_counts()[closest_scale] as f64
         })
         .collect::<Vec<_>>();
     output::print_tsv(writer, canonical_bp_values, au_values).unwrap_or_else(|e| {
