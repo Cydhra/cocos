@@ -1,18 +1,33 @@
 //! A test case which runs the available data files against consel and libcocos and tests whether
 //! the libcocos outputs have the same distribution as the consel outputs.
-//! It does so by doing two one-sided t-tests that attempt to reject the hypothesis that the mean
+//! It does so by doing two one-sided welch's t-tests that attempt to reject the hypothesis that the mean
 //! of cocos' output is outside the confidence interval of consel's mean output.
 
 use csv::Trim;
 use libcocos::au_test;
 use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES};
 use rstest::*;
+use statrs::distribution::{ContinuousCDF, StudentsT};
 use std::fs::{File, create_dir};
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus};
 
+/**
+ * Number of p-values taken from consel and cocos to estimate the distribution of p-values for fixed
+ * Inputs
+ */
 const NUM_SAMPLES: usize = 10;
+
+/**
+ * Margin accepted for the difference in p-values between cocos and consel.
+ */
+const EQUIVALENCE_MARGIN: f64 = 0.025;
+
+/**
+ * Confidence value for the t tests
+ */
+const CONFIDENCE: f64 = 0.95;
 
 /// Consel output is saved to a CSV file with these five values per record. The records in the file
 /// are sorted by rank, not by item.
@@ -115,11 +130,59 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         }
     }
 
-    // calculate mean and variance
     for i in 0..num_trees {
+        // calculate mean and variance
         cocos_mean[i] /= NUM_SAMPLES as f64;
-        cocos_variance[i] /= NUM_SAMPLES as f64;
+        // variance with Bessel's correction
+        cocos_variance[i] /= (NUM_SAMPLES - 1) as f64;
         cocos_variance[i] -= cocos_mean[i] * cocos_mean[i];
+
+        // pooled corrected standard deviation of the distributions
+        let standard_error_consel_squared = consel_variance[i] / NUM_SAMPLES as f64;
+        let standard_error_cocos_squared = cocos_variance[i] / NUM_SAMPLES as f64;
+        let standard_error_delta_squared =
+            standard_error_consel_squared + standard_error_cocos_squared;
+        let standard_error_delta =
+            (standard_error_consel_squared + standard_error_cocos_squared).sqrt();
+
+        // calculate degrees of freedom assuming unequal variances using Welch–Satterthwaite equation
+        let individual_degrees_of_freedom = (NUM_SAMPLES - 1) as f64; // degrees of freedom of the independent distributions
+        let pooled_degrees_of_freedom = individual_degrees_of_freedom
+            * (standard_error_delta_squared * standard_error_delta_squared)
+            / (standard_error_consel_squared * standard_error_consel_squared
+                + standard_error_cocos_squared * standard_error_cocos_squared);
+
+        // calculate the test statistics as a confidence interval with radius of the accepted margin
+        let lower_statistic =
+            (consel_mean[i] - (cocos_mean[i] - EQUIVALENCE_MARGIN)) / standard_error_delta;
+        let upper_statistic =
+            (consel_mean[i] - (cocos_mean[i] + EQUIVALENCE_MARGIN)) / standard_error_delta;
+
+        // reject the hypothesis that the thresholds are exceeded significantly
+        let t_distribution = StudentsT::new(0.0, 1.0, pooled_degrees_of_freedom)
+            .expect("cannot instance the Student's t distribution");
+        let critical_threshold = t_distribution.inverse_cdf(CONFIDENCE);
+
+        print!(
+            "mean is lower: {} > {} = {}\t",
+            lower_statistic,
+            critical_threshold,
+            if lower_statistic > critical_threshold {
+                "rejected"
+            } else {
+                "problem"
+            }
+        );
+        print!(
+            "mean is higher: {} < {} = {}\t",
+            upper_statistic,
+            -critical_threshold,
+            if upper_statistic < -critical_threshold {
+                "rejected"
+            } else {
+                "problem"
+            }
+        );
 
         println!(
             "item {}: consel mean: {}, var: {}\t-\tcocos mean: {}, var: {}",
