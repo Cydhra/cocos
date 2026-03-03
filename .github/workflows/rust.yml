@@ -40,4 +40,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run integration tests
-        run: cargo test -p bench --verbose --all-features --release --test tost -- --test-threads 1
+        run: cargo test -p bench --verbose --all-features --release -- --test-threads 1
