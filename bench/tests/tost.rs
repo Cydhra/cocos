@@ -119,6 +119,9 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         }
     }
 
+    // collected hypotheses that cannot be rejected here for debug output
+    let mut unrejected_hypotheses = Vec::new();
+
     for i in 0..num_trees {
         // variance with Bessel's correction
         cocos_variance[i] -= cocos_mean[i] * cocos_mean[i] / NUM_SAMPLES as f64;
@@ -159,30 +162,54 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
             .expect("cannot instance the Student's t distribution");
         let critical_threshold = t_distribution.inverse_cdf(CONFIDENCE);
 
-        print!(
-            "mean is lower: {:.3} > {:.3} = {}\t",
-            lower_statistic,
-            critical_threshold,
-            if lower_statistic > critical_threshold {
-                "rejected"
-            } else {
-                "problem"
-            }
-        );
-        print!(
-            "mean is higher: {:.3} < {:.3} = {}\t",
-            upper_statistic,
-            -critical_threshold,
-            if upper_statistic < -critical_threshold {
-                "rejected"
-            } else {
-                "problem"
-            }
-        );
+        // test whether the hypotheses that the bounds are exceeded can be rejected
+        let lower_bound_rejected = lower_statistic > critical_threshold;
+        let upper_bound_rejected = upper_statistic < -critical_threshold;
 
-        println!(
-            "item {}: consel mean: {:.5}, var: {:.6}\t-\tcocos mean: {:.5}, var: {:.6}",
-            i, consel_mean[i], consel_variance[i], cocos_mean[i], cocos_variance[i]
-        );
+        if !lower_bound_rejected || !upper_bound_rejected {
+            unrejected_hypotheses.push((
+                lower_bound_rejected,
+                upper_bound_rejected,
+                i,
+                consel_mean[i],
+                consel_variance[i],
+                cocos_mean[i],
+                cocos_variance[i],
+            ));
+        }
     }
+
+    assert_eq!(
+        unrejected_hypotheses.len(),
+        0,
+        "failed to reject inequality hypotheses for {} trees. Unrejected:\n{}",
+        unrejected_hypotheses.len(),
+        unrejected_hypotheses.iter().map(
+            |(
+                lower_bound_rejected,
+                upper_bound_rejected,
+                item,
+                consel_mean,
+                consel_variance,
+                cocos_mean,
+                cocos_variance,
+            )| {
+                format!(
+                    "Failed to reject {} of tree {:02}.\tConsel: {:.6} (var: {:.6}),\tCocos: {:.6} (var: {:.6})",
+                    if *lower_bound_rejected && *upper_bound_rejected {
+                        "both bounds"
+                    } else if *lower_bound_rejected {
+                        "lower bound"
+                    } else {
+                        "upper bound"
+                    },
+                    item,
+                    consel_mean,
+                    consel_variance,
+                    cocos_mean,
+                    cocos_variance,
+                )
+            }
+        ).collect::<Vec<_>>().join("\n")
+    )
 }
