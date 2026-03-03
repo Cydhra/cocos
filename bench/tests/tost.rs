@@ -5,6 +5,7 @@
 //! Consel's output is provided in 10 CSV files of pre-computed consel runs with random seeds.
 
 use csv::Trim;
+use libcocos::au::error::MathError;
 use libcocos::au_test;
 use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES};
 use rand::rngs::StdRng;
@@ -128,7 +129,13 @@ fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     // calculate means and variances
     p_value_runs.iter().for_each(|p_values| {
         for (item, result) in p_values.iter().enumerate() {
-            let au = result.as_ref().expect("calculating AU value failed");
+            let au = match result.as_ref() {
+                Ok(p_value) => *p_value,
+                Err(error) => match error {
+                    MathError::HessianSingular => panic!("AU test failed due to singular hessian"),
+                    MathError::ConvergenceFailed { p_value } => *p_value,
+                },
+            };
             cocos_mean[item] += au;
             cocos_variance[item] += au * au;
         }
