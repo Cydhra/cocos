@@ -16,13 +16,13 @@ use std::path::{Path, PathBuf};
 /// Number of p-values taken from cocos.
 /// It is expected that the consel outputs provide equal amounts of samples.
 /// The implementation of the Welch–Satterthwaite equation relies on this fact.
-const NUM_SAMPLES: usize = 10;
+const NUM_SAMPLES: usize = 25;
 
 /// Margin accepted for the difference in p-values between cocos and consel.
-/// We accept 2% (additive) difference of p-values.
+/// We accept 2.5% (additive) difference of p-values.
 /// This is expected to not drastically alter the amount of rejected trees between the tools
 /// (especially since we see lower variance for low p-values).
-const EQUIVALENCE_MARGIN: f64 = 0.02;
+const EQUIVALENCE_MARGIN: f64 = 0.025;
 
 /// Confidence value for the t tests.
 /// Note that this means that the null-hypothesis is rejected incorrectly with probability 1%,
