@@ -9,6 +9,7 @@ pub fn parse_puzzle<R: Read>(mut reader: BufReader<R>) -> anyhow::Result<SiteLik
     reader.read_until(b'\n', &mut header)?;
 
     let header = String::from_utf8_lossy(&header);
+    let header = header.trim();
 
     let mut head_iter = header.splitn(2, ' ');
     let num_trees: usize = head_iter
@@ -102,5 +103,31 @@ mod tests {
         assert_eq!(second_line[1], -2.3);
         assert_eq!(second_line[2], -10.4);
         assert_eq!(second_line[3], -100.5);
+    }
+
+    #[test]
+    fn test_leading_whitespace() {
+        let site_lnl = b"  2 4\n\
+            tree1    -1.4 -1.3 -1.4 -1.5\n\
+            tree2    -1.6 -2.3 -1.4 -1.5\n\
+            ";
+
+        let reader = BufReader::new(Cursor::new(site_lnl));
+        let result = parse_puzzle(reader);
+
+        assert!(
+            result.is_ok(),
+            "Parsing puzzle failed: {}",
+            result.unwrap_err()
+        );
+
+        let puzzle = result.unwrap();
+        assert_eq!(puzzle.num_trees(), 2);
+
+        let first_line = &puzzle[0];
+        assert_eq!(first_line[0], -1.4);
+
+        let second_line = &puzzle[1];
+        assert_eq!(second_line[0], -1.6);
     }
 }
