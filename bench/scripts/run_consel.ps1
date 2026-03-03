@@ -7,6 +7,12 @@
  The CSV files contain only the base statistics consel always generates, without those that can be disabled,
  since we only require the AU value. Furhter, the script doesn't need to be run for existing inputs, since we
  track them in git. Use this to add new datasets to the benchmarks.
+
+ .PARAM SiteLH
+ Path to the puzzle-style (raxml) per-site log-likelihood file that serves as input to consel.
+
+ .PARAM Samples
+ How many consel runs to generate
 #>
 
 param (
@@ -14,7 +20,7 @@ param (
     [string] $SiteLH,
 
     [Parameter(Mandatory = $false)]
-    [int] $Samples = 25
+    [int] $Samples = 50
 )
 
 Import-Module $PSScriptRoot/consel
@@ -30,14 +36,17 @@ if (-not (Test-Path $DirectoryPath)) {
 Write-Host "Generating Run 0 to $($Samples - 1)..."
 0..($Samples - 1) | ForEach-Object {
     $Prefix = [System.IO.Path]::Combine($DirectoryPath, "run$_")
+    if (-not (Test-Path "$Prefix.csv")) {
+        # Run consel
+        Invoke-Makermt -Sitelh $SiteLH -Output $Prefix
+        Invoke-Consel -Rmt "$Prefix.rmt" -Output $Prefix
 
-    # Run consel
-    Invoke-Makermt -Sitelh $SiteLH -Output $Prefix
-    Invoke-Consel -Rmt "$Prefix.rmt" -Output $Prefix
+        # Convert to CSV file
+        Import-Pv "$Prefix.pv" | Export-Csv "$Prefix.csv" -UseQuotes Always -NoTypeInformation
 
-    # Convert to CSV file
-    Import-Pv "$Prefix.pv" | Export-Csv "$Prefix.csv" -UseQuotes Always -NoTypeInformation
-
-    # Cleanup consel output
-    Remove-Item "$Prefix.*" -Exclude *.csv
+        # Cleanup consel output
+        Remove-Item "$Prefix.*" -Exclude *.csv
+    } else {
+        Write-Host "Skipping run $_!"
+    }
 }
