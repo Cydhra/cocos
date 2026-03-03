@@ -93,7 +93,7 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     // calculate consel mean and variance
     for i in 0..num_trees {
         consel_mean[i] /= NUM_SAMPLES as f64;
-        consel_variance[i] /= NUM_SAMPLES as f64;
+        consel_variance[i] /= (NUM_SAMPLES - 1) as f64;
         consel_variance[i] -= consel_mean[i] * consel_mean[i];
     }
 
