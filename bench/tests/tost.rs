@@ -92,9 +92,10 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
 
     // calculate consel mean and variance
     for i in 0..num_trees {
-        consel_mean[i] /= NUM_SAMPLES as f64;
+        consel_variance[i] -= consel_mean[i] * consel_mean[i] / NUM_SAMPLES as f64;
         consel_variance[i] /= (NUM_SAMPLES - 1) as f64;
-        consel_variance[i] -= consel_mean[i] * consel_mean[i];
+
+        consel_mean[i] /= NUM_SAMPLES as f64;
     }
 
     // run cocos
@@ -117,11 +118,12 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     }
 
     for i in 0..num_trees {
+        // variance with Bessel's correction
+        cocos_variance[i] -= cocos_mean[i] * cocos_mean[i] / NUM_SAMPLES as f64;
+        cocos_variance[i] /= (NUM_SAMPLES - 1) as f64;
+
         // calculate mean and variance
         cocos_mean[i] /= NUM_SAMPLES as f64;
-        // variance with Bessel's correction
-        cocos_variance[i] /= (NUM_SAMPLES - 1) as f64;
-        cocos_variance[i] -= cocos_mean[i] * cocos_mean[i];
 
         // pooled corrected standard deviation of the distributions
         let standard_error_consel_squared = consel_variance[i] / NUM_SAMPLES as f64;
