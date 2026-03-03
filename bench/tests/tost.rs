@@ -7,6 +7,9 @@
 use csv::Trim;
 use libcocos::au_test;
 use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES};
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
+use rayon::prelude::*;
 use rstest::*;
 use statrs::distribution::{ContinuousCDF, StudentsT};
 use std::fs::File;
@@ -100,24 +103,36 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         consel_mean[i] /= NUM_SAMPLES as f64;
     }
 
-    // run cocos
+    // run cocos in parallel (we assume test execution is sequential so we can leverage threads.
+    // We also run AU test sequentially, because we probably have more runs than CPUs).
     let mut cocos_mean = vec![0.0; num_trees];
     let mut cocos_variance = vec![0.0; num_trees];
 
-    let mut rng = rand::rng();
-    for _ in 0..NUM_SAMPLES {
-        let p_values = au_test(
-            &mut rng,
-            &per_site_lnl,
-            &DEFAULT_FACTORS,
-            &DEFAULT_REPLICATES,
-        );
+    // generate independent seeds for the threads
+    let mut seed_rng = rand::rng();
+    let seeds: Vec<_> = (0..NUM_SAMPLES).map(|_| seed_rng.random()).collect();
+
+    let p_value_runs: Vec<_> = seeds
+        .into_par_iter()
+        .map(|seed| {
+            let mut rng = StdRng::from_seed(seed);
+            au_test(
+                &mut rng,
+                &per_site_lnl,
+                &DEFAULT_FACTORS,
+                &DEFAULT_REPLICATES,
+            )
+        })
+        .collect();
+
+    // calculate means and variances
+    p_value_runs.iter().for_each(|p_values| {
         for (item, result) in p_values.iter().enumerate() {
             let au = result.as_ref().expect("calculating AU value failed");
             cocos_mean[item] += au;
             cocos_variance[item] += au * au;
         }
-    }
+    });
 
     // collected hypotheses that cannot be rejected here for debug output
     let mut unrejected_hypotheses = Vec::new();
