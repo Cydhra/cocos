@@ -46,7 +46,7 @@ struct ConselRecord {
 }
 
 #[rstest]
-fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
+fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     // get environment
     let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut file_name = site_likelihoods
