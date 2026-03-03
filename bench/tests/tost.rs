@@ -2,8 +2,9 @@
 //! the libcocos outputs have the same distribution as the consel outputs.
 //! It does so by doing two one-sided welch's t-tests that attempt to reject the hypothesis that the mean
 //! of cocos' output is outside the confidence interval of consel's mean output.
-//! Consel's output is provided in 10 CSV files of pre-computed consel runs with random seeds.
+//! Consel's output is provided in 50 CSV files of pre-computed consel runs with random seeds.
 
+use bench::reject_hypotheses;
 use csv::Trim;
 use libcocos::au::error::MathError;
 use libcocos::au_test;
@@ -12,10 +13,9 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use rstest::*;
-use statrs::distribution::{ContinuousCDF, StudentsT};
 use std::fs::File;
 use std::io::BufReader;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Number of p-values taken from cocos.
 /// It is expected that the consel outputs provide equal amounts of samples.
@@ -49,7 +49,6 @@ struct ConselRecord {
 #[rstest]
 fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     // get environment
-    let repository_root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut file_name = site_likelihoods
         .file_name()
         .expect("test called with invalid fixture")
@@ -66,8 +65,10 @@ fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     }
 
     // find consel output
-    let data_dir = repository_root.join("data");
-    let consel_dir = data_dir.join(file_name);
+    let consel_dir = site_likelihoods
+        .parent()
+        .expect("fixture cannot be located")
+        .join(file_name);
 
     // read site-likelihoods
     let per_site_lnl = cocos_parse::parse_puzzle(BufReader::new(
@@ -141,9 +142,7 @@ fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         }
     });
 
-    // collected hypotheses that cannot be rejected here for debug output
-    let mut unrejected_hypotheses = Vec::new();
-
+    // calculate cocos mean and variance
     for i in 0..num_trees {
         // variance with Bessel's correction
         cocos_variance[i] -= cocos_mean[i] * cocos_mean[i] / NUM_SAMPLES as f64;
@@ -151,87 +150,16 @@ fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
 
         // calculate mean and variance
         cocos_mean[i] /= NUM_SAMPLES as f64;
-
-        // pooled corrected standard deviation of the distributions
-        let standard_error_consel_squared = consel_variance[i] / NUM_SAMPLES as f64;
-        let standard_error_cocos_squared = cocos_variance[i] / NUM_SAMPLES as f64;
-        let standard_error_delta_squared =
-            standard_error_consel_squared + standard_error_cocos_squared;
-        let standard_error_delta =
-            (standard_error_consel_squared + standard_error_cocos_squared).sqrt();
-
-        // calculate degrees of freedom assuming unequal variances using Welch–Satterthwaite equation
-        let individual_degrees_of_freedom = (NUM_SAMPLES - 1) as f64; // degrees of freedom of the independent distributions
-
-        // the degrees of freedom of a linear combination, simplified because the individual degrees of freedom
-        // are the same for all summands and thus can be factored out of the denominator.
-        // reference: https://en.wikipedia.org/wiki/Welch%E2%80%93Satterthwaite_equation
-        // simplified: https://en.wikipedia.org/wiki/Welch%27s_t-test#Calculations
-        let pooled_degrees_of_freedom = individual_degrees_of_freedom
-            * (standard_error_delta_squared * standard_error_delta_squared)
-            / (standard_error_consel_squared * standard_error_consel_squared
-                + standard_error_cocos_squared * standard_error_cocos_squared);
-
-        // calculate the test statistics as a confidence interval with radius of the accepted margin
-        // reference: https://en.wikipedia.org/wiki/Equivalence_test#TOST_procedure
-        let lower_statistic =
-            (consel_mean[i] - (cocos_mean[i] - EQUIVALENCE_MARGIN)) / standard_error_delta;
-        let upper_statistic =
-            (consel_mean[i] - (cocos_mean[i] + EQUIVALENCE_MARGIN)) / standard_error_delta;
-
-        // reject the hypothesis that the thresholds are exceeded significantly
-        let t_distribution = StudentsT::new(0.0, 1.0, pooled_degrees_of_freedom)
-            .expect("cannot instance the Student's t distribution");
-        let critical_threshold = t_distribution.inverse_cdf(CONFIDENCE);
-
-        // test whether the hypotheses that the bounds are exceeded can be rejected
-        let lower_bound_rejected = lower_statistic > critical_threshold;
-        let upper_bound_rejected = upper_statistic < -critical_threshold;
-
-        if !lower_bound_rejected || !upper_bound_rejected {
-            unrejected_hypotheses.push((
-                lower_bound_rejected,
-                upper_bound_rejected,
-                i,
-                consel_mean[i],
-                consel_variance[i],
-                cocos_mean[i],
-                cocos_variance[i],
-            ));
-        }
     }
 
-    assert_eq!(
-        unrejected_hypotheses.len(),
-        0,
-        "failed to reject inequality hypotheses for {} trees. Unrejected:\n{}",
-        unrejected_hypotheses.len(),
-        unrejected_hypotheses.iter().map(
-            |(
-                lower_bound_rejected,
-                upper_bound_rejected,
-                item,
-                consel_mean,
-                consel_variance,
-                cocos_mean,
-                cocos_variance,
-            )| {
-                format!(
-                    "Failed to reject {} of tree {:02}.\tConsel: {:.6} (var: {:.6}),\tCocos: {:.6} (var: {:.6})",
-                    if *lower_bound_rejected && *upper_bound_rejected {
-                        "both bounds"
-                    } else if *lower_bound_rejected {
-                        "lower bound"
-                    } else {
-                        "upper bound"
-                    },
-                    item,
-                    consel_mean,
-                    consel_variance,
-                    cocos_mean,
-                    cocos_variance,
-                )
-            }
-        ).collect::<Vec<_>>().join("\n")
-    )
+    // collected hypotheses that cannot be rejected here for debug output
+    reject_hypotheses(
+        NUM_SAMPLES,
+        EQUIVALENCE_MARGIN,
+        CONFIDENCE,
+        &consel_mean,
+        &consel_variance,
+        &cocos_mean,
+        &cocos_variance,
+    );
 }
