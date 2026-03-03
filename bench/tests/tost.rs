@@ -5,6 +5,7 @@
 
 use csv::Trim;
 use libcocos::au_test;
+use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES};
 use rstest::*;
 use statrs::distribution::{ContinuousCDF, StudentsT};
 use std::fs::File;
@@ -100,14 +101,14 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     let mut cocos_variance = vec![0.0; num_trees];
 
     let mut rng = rand::rng();
-    const FACTORS: [f64; 11] = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5];
-    const REPLICATES: [usize; 11] = [
-        100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000,
-        100_000,
-    ];
 
     for _ in 0..NUM_SAMPLES {
-        let p_values = au_test(&mut rng, &per_site_lnl, &FACTORS, &REPLICATES);
+        let p_values = au_test(
+            &mut rng,
+            &per_site_lnl,
+            &DEFAULT_FACTORS,
+            &DEFAULT_REPLICATES,
+        );
         for (item, result) in p_values.iter().enumerate() {
             let au = result.as_ref().expect("calculating AU value failed");
             cocos_mean[item] += au;
@@ -149,7 +150,7 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         let critical_threshold = t_distribution.inverse_cdf(CONFIDENCE);
 
         print!(
-            "mean is lower: {} > {} = {}\t",
+            "mean is lower: {:.3} > {:.3} = {}\t",
             lower_statistic,
             critical_threshold,
             if lower_statistic > critical_threshold {
@@ -159,7 +160,7 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
             }
         );
         print!(
-            "mean is higher: {} < {} = {}\t",
+            "mean is higher: {:.3} < {:.3} = {}\t",
             upper_statistic,
             -critical_threshold,
             if upper_statistic < -critical_threshold {
@@ -170,7 +171,7 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         );
 
         println!(
-            "item {}: consel mean: {}, var: {}\t-\tcocos mean: {}, var: {}",
+            "item {}: consel mean: {:.5}, var: {:.6}\t-\tcocos mean: {:.5}, var: {:.6}",
             i, consel_mean[i], consel_variance[i], cocos_mean[i], cocos_variance[i]
         );
     }
