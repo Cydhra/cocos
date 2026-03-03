@@ -161,5 +161,7 @@ fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         &consel_variance,
         &cocos_mean,
         &cocos_variance,
+        "consel",
+        "cocos",
     );
 }

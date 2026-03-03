@@ -8,6 +8,8 @@ pub fn reject_hypotheses(
     reference_variance: &[f64],
     testing_mean: &[f64],
     testing_variance: &[f64],
+    reference_name: &str,
+    testing_name: &str,
 ) {
     // result list
     let mut unrejected_hypotheses = Vec::new();
@@ -78,7 +80,7 @@ pub fn reject_hypotheses(
                                               cocos_variance,
                                           )| {
             format!(
-                "Failed to reject {} of tree {:02}.\tConsel: {:.6} (var: {:.6}),\tCocos: {:.6} (var: {:.6})",
+                "Failed to reject {} of tree {:02}.\t{reference_name}: {:.6} (var: {:.6}),\t{testing_name}: {:.6} (var: {:.6})",
                 if *lower_bound_rejected && *upper_bound_rejected {
                     "both bounds"
                 } else if *lower_bound_rejected {
