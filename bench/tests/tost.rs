@@ -50,7 +50,7 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         .to_str()
         .expect("file name is not representable");
 
-    // create directory for the consel output of this site-likelihood file
+    // find directory with consel output
     if site_likelihoods.extension().is_some() {
         let suffix = format!(
             ".{}",
@@ -59,6 +59,10 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         file_name = file_name.strip_suffix(&suffix).unwrap();
     }
 
+    // find consel output
+    let data_dir = repository_root.join("data");
+    let consel_dir = data_dir.join(file_name);
+
     // read site-likelihoods
     let per_site_lnl = cocos_parse::parse_puzzle(BufReader::new(
         File::open(&site_likelihoods).expect("cannot read fixture"),
@@ -66,12 +70,9 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     .expect("cannot parse siteLH file");
     let num_trees = per_site_lnl.num_trees();
 
+    // read in consel outputs
     let mut consel_mean = vec![0.0; num_trees];
     let mut consel_variance = vec![0.0; num_trees];
-
-    // read consel results
-    let data_dir = repository_root.join("data");
-    let consel_dir = data_dir.join(file_name);
 
     for i in 0..NUM_SAMPLES {
         let result_file = consel_dir.join(format!("run{}.csv", i));
@@ -89,7 +90,7 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         }
     }
 
-    // calculate mean and variance
+    // calculate consel mean and variance
     for i in 0..num_trees {
         consel_mean[i] /= NUM_SAMPLES as f64;
         consel_variance[i] /= NUM_SAMPLES as f64;
@@ -101,7 +102,6 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     let mut cocos_variance = vec![0.0; num_trees];
 
     let mut rng = rand::rng();
-
     for _ in 0..NUM_SAMPLES {
         let p_values = au_test(
             &mut rng,
