@@ -7,3 +7,6 @@ target/
 # Workspace
 run/*
 !run/.gitkeep
+
+bench/raxml
+bench/tests/raxml.rs
