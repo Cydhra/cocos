@@ -2,6 +2,7 @@
 //! the libcocos outputs have the same distribution as the consel outputs.
 //! It does so by doing two one-sided welch's t-tests that attempt to reject the hypothesis that the mean
 //! of cocos' output is outside the confidence interval of consel's mean output.
+//! Consel's output is provided in 10 CSV files of pre-computed consel runs with random seeds.
 
 use csv::Trim;
 use libcocos::au_test;
@@ -12,21 +13,22 @@ use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 
-/**
- * Number of p-values taken from consel and cocos to estimate the distribution of p-values for fixed
- * Inputs
- */
+/// Number of p-values taken from cocos.
+/// It is expected that the consel outputs provide equal amounts of samples.
+/// The implementation of the Welch–Satterthwaite equation relies on this fact.
 const NUM_SAMPLES: usize = 10;
 
-/**
- * Margin accepted for the difference in p-values between cocos and consel.
- */
-const EQUIVALENCE_MARGIN: f64 = 0.025;
+/// Margin accepted for the difference in p-values between cocos and consel.
+/// We accept 2% (additive) difference of p-values.
+/// This is expected to not drastically alter the amount of rejected trees between the tools
+/// (especially since we see lower variance for low p-values).
+const EQUIVALENCE_MARGIN: f64 = 0.02;
 
-/**
- * Confidence value for the t tests
- */
-const CONFIDENCE: f64 = 0.95;
+/// Confidence value for the t tests.
+/// Note that this means that the null-hypothesis is rejected incorrectly with probability 1%,
+/// but this doesn't mean that failing to reject it has an equally high probability.
+/// Failing to reject the hypothesis should always be treated as a problem with the algorithm.
+const CONFIDENCE: f64 = 0.99;
 
 /// Consel output is saved to a CSV file with these five values per record. The records in the file
 /// are sorted by rank, not by item.
