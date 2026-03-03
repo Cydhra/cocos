@@ -133,12 +133,18 @@ fn test_distribution(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
 
         // calculate degrees of freedom assuming unequal variances using Welch–Satterthwaite equation
         let individual_degrees_of_freedom = (NUM_SAMPLES - 1) as f64; // degrees of freedom of the independent distributions
+
+        // the degrees of freedom of a linear combination, simplified because the individual degrees of freedom
+        // are the same for all summands and thus can be factored out of the denominator.
+        // reference: https://en.wikipedia.org/wiki/Welch%E2%80%93Satterthwaite_equation
+        // simplified: https://en.wikipedia.org/wiki/Welch%27s_t-test#Calculations
         let pooled_degrees_of_freedom = individual_degrees_of_freedom
             * (standard_error_delta_squared * standard_error_delta_squared)
             / (standard_error_consel_squared * standard_error_consel_squared
                 + standard_error_cocos_squared * standard_error_cocos_squared);
 
         // calculate the test statistics as a confidence interval with radius of the accepted margin
+        // reference: https://en.wikipedia.org/wiki/Equivalence_test#TOST_procedure
         let lower_statistic =
             (consel_mean[i] - (cocos_mean[i] - EQUIVALENCE_MARGIN)) / standard_error_delta;
         let upper_statistic =
