@@ -10,7 +10,7 @@
 //! The module makes no assumptions about the source of the log-likelihood and resamples at random
 //! with the provided random number generator.
 
-use crate::vectors::{dot_prod, max};
+use crate::vectors::dot_prod;
 use crate::{BootstrapReplicates, ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods};
 use rand::Rng;
 use rand::distr::Uniform;
