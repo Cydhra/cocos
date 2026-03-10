@@ -245,14 +245,38 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
 fn normalize_replicate_vector(
     target: &mut [f64],
     replicate_likelihoods: &[Box<[f64]>],
-    maxima: &[f64],
+    maxima: &[(f64, f64)],
     vector_index: usize,
 ) {
     target
         .iter_mut()
         .zip(replicate_likelihoods.iter())
         .enumerate()
-        .for_each(|(i, (target, replicate))| *target = maxima[i] - replicate[vector_index]);
+        .for_each(|(i, (target, replicate))| {
+            let (best, follow_up) = maxima[i];
+            *target = if replicate[vector_index] == best {
+                follow_up
+            } else {
+                best
+            } - replicate[vector_index];
+        });
+}
+
+/// Select the largest two entries of a slice.
+fn column_max(column: &[f64]) -> (f64, f64) {
+    let mut best = f64::NEG_INFINITY;
+    let mut follow_up = f64::NEG_INFINITY;
+
+    for &likelihood in column {
+        if likelihood >= best {
+            follow_up = best;
+            best = likelihood;
+        } else if likelihood > follow_up {
+            follow_up = likelihood;
+        }
+    }
+
+    (best, follow_up)
 }
 
 /// Convert the replicate likelihoods into the format expected by [`BootstrapReplicates`].
@@ -287,7 +311,7 @@ pub fn normalize_replicates(
     // every time, accepting that the best input for the replicate gets likelihood zero
     let boot_max: Box<[_]> = replicate_likelihoods
         .iter()
-        .map(|replicate| max(replicate))
+        .map(|replicate| column_max(replicate))
         .collect();
 
     // subtract the maximum from each replicate likelihood for each tree, such that all bootstrap
@@ -322,7 +346,7 @@ pub fn par_normalize_replicates(
     // for comments on this method see sequential version
     let boot_max: Box<[_]> = replicate_likelihoods
         .par_iter()
-        .map(|replicate| max(replicate))
+        .map(|replicate| column_max(replicate))
         .collect();
     replicate_matrix
         .get_bootstrap_vectors_mut(scale_index)
