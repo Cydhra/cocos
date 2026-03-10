@@ -68,7 +68,7 @@ impl<'input> WlsProblem<'input> {
         let mut non_zero_observations = 0;
         for (scale_index, &count) in self.bp_values.iter().enumerate() {
             let bp = count / self.replication_counts[scale_index] as f64;
-            if bp < EPSILON {
+            if bp < EPSILON || bp >= 1.0 {
                 // guard against division by zero, both weight and distance is observed
                 // to be zero in those cases
                 continue;
