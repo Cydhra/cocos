@@ -2,7 +2,8 @@
 //! the libcocos outputs have the same distribution as the consel outputs.
 //! It does so by doing two one-sided welch's t-tests that attempt to reject the hypothesis that the mean
 //! of cocos' output is outside the confidence interval of consel's mean output.
-//! Consel's output is provided in 50 CSV files of pre-computed consel runs with random seeds.
+//! Consel's output is provided in N CSV files of pre-computed consel runs with random seeds,
+//! which will be matched with N cocos runs.
 
 use bench::reject_hypotheses;
 use csv::Trim;
@@ -13,14 +14,10 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use rstest::*;
+use std::fs;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::PathBuf;
-
-/// Number of p-values taken from cocos.
-/// It is expected that the consel outputs provide equal amounts of samples.
-/// The implementation of the Welch–Satterthwaite equation relies on this fact.
-const NUM_SAMPLES: usize = 50;
 
 /// Margin accepted for the difference in p-values between cocos and consel.
 /// We accept 2% (additive) difference of p-values.
@@ -81,9 +78,22 @@ fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     let mut consel_mean = vec![0.0; num_trees];
     let mut consel_variance = vec![0.0; num_trees];
 
-    for i in 0..NUM_SAMPLES {
-        let result_file = consel_dir.join(format!("run{}.csv", i));
+    // find consel samples to determine the number of samples to take from cocos
+    let consel_samples: Vec<_> = fs::read_dir(consel_dir)
+        .expect("cannot list consel output directory")
+        .filter(|f| {
+            f.as_ref()
+                .expect("cannot list consel output directory content")
+                .file_name()
+                .to_str()
+                .expect("cannot parse OS string")
+                .ends_with("csv")
+        })
+        .collect();
+    let num_samples = consel_samples.len();
 
+    for result_file in consel_samples {
+        let result_file = result_file.expect("cannot list consel output").path();
         let mut reader = csv::ReaderBuilder::new()
             .has_headers(true)
             .trim(Trim::Fields)
@@ -99,10 +109,10 @@ fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
 
     // calculate consel mean and variance
     for i in 0..num_trees {
-        consel_variance[i] -= consel_mean[i] * consel_mean[i] / NUM_SAMPLES as f64;
-        consel_variance[i] /= (NUM_SAMPLES - 1) as f64;
+        consel_variance[i] -= consel_mean[i] * consel_mean[i] / num_samples as f64;
+        consel_variance[i] /= (num_samples - 1) as f64;
 
-        consel_mean[i] /= NUM_SAMPLES as f64;
+        consel_mean[i] /= num_samples as f64;
     }
 
     // run cocos in parallel (we assume test execution is sequential so we can leverage threads.
@@ -112,7 +122,7 @@ fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
 
     // generate independent seeds for the threads
     let mut seed_rng = rand::rng();
-    let seeds: Vec<_> = (0..NUM_SAMPLES).map(|_| seed_rng.random()).collect();
+    let seeds: Vec<_> = (0..num_samples).map(|_| seed_rng.random()).collect();
 
     let p_value_runs: Vec<_> = seeds
         .into_par_iter()
@@ -145,16 +155,16 @@ fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     // calculate cocos mean and variance
     for i in 0..num_trees {
         // variance with Bessel's correction
-        cocos_variance[i] -= cocos_mean[i] * cocos_mean[i] / NUM_SAMPLES as f64;
-        cocos_variance[i] /= (NUM_SAMPLES - 1) as f64;
+        cocos_variance[i] -= cocos_mean[i] * cocos_mean[i] / num_samples as f64;
+        cocos_variance[i] /= (num_samples - 1) as f64;
 
         // calculate mean and variance
-        cocos_mean[i] /= NUM_SAMPLES as f64;
+        cocos_mean[i] /= num_samples as f64;
     }
 
     // collected hypotheses that cannot be rejected here for debug output
     reject_hypotheses(
-        NUM_SAMPLES,
+        num_samples,
         EQUIVALENCE_MARGIN,
         CONFIDENCE,
         &consel_mean,
