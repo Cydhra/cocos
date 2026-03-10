@@ -24,33 +24,43 @@ pub fn reject_hypotheses(
         let standard_error_delta =
             (standard_error_consel_squared + standard_error_cocos_squared).sqrt();
 
-        // calculate degrees of freedom assuming unequal variances using Welch–Satterthwaite equation
-        let individual_degrees_of_freedom = (num_samples - 1) as f64; // degrees of freedom of the independent distributions
+        let lower_bound_rejected;
+        let upper_bound_rejected;
 
-        // the degrees of freedom of a linear combination, simplified because the individual degrees of freedom
-        // are the same for all summands and thus can be factored out of the denominator.
-        // reference: https://en.wikipedia.org/wiki/Welch%E2%80%93Satterthwaite_equation
-        // simplified: https://en.wikipedia.org/wiki/Welch%27s_t-test#Calculations
-        let pooled_degrees_of_freedom = individual_degrees_of_freedom
-            * (standard_error_delta_squared * standard_error_delta_squared)
-            / (standard_error_consel_squared * standard_error_consel_squared
-                + standard_error_cocos_squared * standard_error_cocos_squared);
+        if standard_error_cocos_squared == 0.0 && standard_error_consel_squared == 0.0 {
+            // if both variances are zero, the t-test collapses, however we don't have any uncertainty
+            // and can just compare the means directly.
+            lower_bound_rejected = testing_mean[i] >= reference_mean[i] - equivalence_margin;
+            upper_bound_rejected = testing_mean[i] <= reference_mean[i] + equivalence_margin;
+        } else {
+            // calculate degrees of freedom assuming unequal variances using Welch–Satterthwaite equation
+            let individual_degrees_of_freedom = (num_samples - 1) as f64; // degrees of freedom of the independent distributions
 
-        // calculate the test statistics as a confidence interval with radius of the accepted margin
-        // reference: https://en.wikipedia.org/wiki/Equivalence_test#TOST_procedure
-        let lower_statistic =
-            (reference_mean[i] - (testing_mean[i] - equivalence_margin)) / standard_error_delta;
-        let upper_statistic =
-            (reference_mean[i] - (testing_mean[i] + equivalence_margin)) / standard_error_delta;
+            // the degrees of freedom of a linear combination, simplified because the individual degrees of freedom
+            // are the same for all summands and thus can be factored out of the denominator.
+            // reference: https://en.wikipedia.org/wiki/Welch%E2%80%93Satterthwaite_equation
+            // simplified: https://en.wikipedia.org/wiki/Welch%27s_t-test#Calculations
+            let pooled_degrees_of_freedom = individual_degrees_of_freedom
+                * (standard_error_delta_squared * standard_error_delta_squared)
+                / (standard_error_consel_squared * standard_error_consel_squared
+                    + standard_error_cocos_squared * standard_error_cocos_squared);
 
-        // reject the hypothesis that the thresholds are exceeded significantly
-        let t_distribution = StudentsT::new(0.0, 1.0, pooled_degrees_of_freedom)
-            .expect("cannot instance the Student's t distribution");
-        let critical_threshold = t_distribution.inverse_cdf(confidence);
+            // calculate the test statistics as a confidence interval with radius of the accepted margin
+            // reference: https://en.wikipedia.org/wiki/Equivalence_test#TOST_procedure
+            let lower_statistic =
+                (reference_mean[i] - (testing_mean[i] - equivalence_margin)) / standard_error_delta;
+            let upper_statistic =
+                (reference_mean[i] - (testing_mean[i] + equivalence_margin)) / standard_error_delta;
 
-        // test whether the hypotheses that the bounds are exceeded can be rejected
-        let lower_bound_rejected = lower_statistic > critical_threshold;
-        let upper_bound_rejected = upper_statistic < -critical_threshold;
+            // reject the hypothesis that the thresholds are exceeded significantly
+            let t_distribution = StudentsT::new(0.0, 1.0, pooled_degrees_of_freedom)
+                .expect("cannot instance the Student's t distribution");
+            let critical_threshold = t_distribution.inverse_cdf(confidence);
+
+            // test whether the hypotheses that the bounds are exceeded can be rejected
+            lower_bound_rejected = lower_statistic > critical_threshold;
+            upper_bound_rejected = upper_statistic < -critical_threshold;
+        }
 
         if !lower_bound_rejected || !upper_bound_rejected {
             unrejected_hypotheses.push((
@@ -65,8 +75,8 @@ pub fn reject_hypotheses(
         } else {
             println!(
                 "Rejected inequality: tree {i} is not significantly better or worse \
-                 ({reference_name} mean: {:.6}, variance: {:.6}; \
-                  {testing_name} mean: {:.6}, variance: {:.6}",
+                 ({reference_name} mean: {:.6}, variance: {:}; \
+                  {testing_name} mean: {:.6}, variance: {:}",
                 reference_mean[i], reference_variance[i], testing_mean[i], testing_variance[i]
             )
         }
