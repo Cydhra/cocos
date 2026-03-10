@@ -62,6 +62,13 @@ pub fn reject_hypotheses(
                 testing_mean[i],
                 testing_variance[i],
             ));
+        } else {
+            println!(
+                "Rejected inequality: tree {i} is not significantly better or worse \
+                 ({reference_name} mean: {:.6}, variance: {:.6}; \
+                  {testing_name} mean: {:.6}, variance: {:.6}",
+                reference_mean[i], reference_variance[i], testing_mean[i], testing_variance[i]
+            )
         }
     }
 
