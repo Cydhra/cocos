@@ -20,10 +20,3 @@ pub(crate) fn dot_prod(a: &[f64], b: &[f64]) -> f64 {
         .iter()
         .sum()
 }
-
-// TODO simd
-#[inline]
-pub(crate) fn max(a: &[f64]) -> f64 {
-    debug_assert!(!a.is_empty());
-    *a.iter().max_by(|a, b| a.total_cmp(b)).unwrap()
-}
