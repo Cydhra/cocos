@@ -76,7 +76,9 @@ pub fn calc_au_value(
     let mut last_p_value = 0.0;
     let mut last_error = 0.0;
     let mut last_threshold = 0.0;
-    let mut last_degrees_of_freedom = 0;
+    // to avoid classifying the first iteration as degenerate if the threshold is negative,
+    // last_degrees_of_freedom has to be initialized with a negative value.
+    let mut last_degrees_of_freedom = -1;
     let mut target_threshold = 0.0;
 
     for _ in 0..100 {
