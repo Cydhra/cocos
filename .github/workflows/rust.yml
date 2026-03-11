@@ -11,7 +11,7 @@ env:
 
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -C target-cpu=native
