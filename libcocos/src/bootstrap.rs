@@ -496,11 +496,9 @@ mod tests {
 
     #[test]
     fn test_normalize_replicates() {
-        // normalize replicates is supposed to move all replicate likelihoods towards 0, such that
-        // the maximum likelihood of each replicate is negative (second_highest - max), and all
-        // other likelihoods are slightly positive (max - other).
-        // Our code contains an optimization which moves the maximum to 0 instead of negative, since
-        // it is never important whether the value is actually negative or just equal to zero.
+        // normalize replicates is supposed to calculate observed likelihood differences when
+        // compared with the global maximum likelihood (replicate) tree, or with the second best
+        // tree in case of the best tree.
 
         let replicates = [
             vec![-2.0, -1.9, -2.0].into_boxed_slice(),
@@ -517,7 +515,7 @@ mod tests {
         // likelihoods should be normalized, so zero for the highest and positive difference for
         // the lower ones, and sorted in ascending order
         assert_eq_eps!(iter.next().unwrap(), &[0.1, 1.0, 1.0, 1.5]);
-        assert_eq_eps!(iter.next().unwrap(), &[0.0, 0.0, 0.5, 1.0]);
-        assert_eq_eps!(iter.next().unwrap(), &[0.0, 0.0, 0.0, 0.1]);
+        assert_eq_eps!(iter.next().unwrap(), &[-0.1, 0.0, 0.5, 1.0]);
+        assert_eq_eps!(iter.next().unwrap(), &[-1.0, -0.5, 0.0, 0.1]);
     }
 }
