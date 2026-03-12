@@ -83,7 +83,7 @@ pub fn calc_au_value(
     let mut target_threshold = 0.0;
 
     for _ in 0..100 {
-        let bp_values = bootstrap_replicates.compute_bp_values(tree, threshold);
+        let bp_values = bootstrap_replicates.smooth_biased_bp(tree, threshold);
 
         let params = fit_model_bp_wls(
             &bp_values,

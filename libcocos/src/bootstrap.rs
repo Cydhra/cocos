@@ -63,6 +63,13 @@ pub trait BootstrapTable {
     /// Compute the Bootstrap Proportions (BP Values) from a smoothed empirical distribution function
     /// derived from the bootstrap deltas.
     ///
+    /// Note that this function returns bootstrap counts rather than proportions.
+    /// To obtain the proportion,
+    /// divide the count through the replication count of the respective scale.
+    ///
+    /// Warning: This method assumes all replicate vectors are sorted in ascending order.
+    /// If the vectors are not sorted, the method returns nonsensical results.
+    ///
     /// # Threshold
     /// At threshold `0`, this function computes the canonical bootstrap counts (smoothed)
     /// where each count is the number of bootstrap replicates where the resampled input yielded the
@@ -84,12 +91,6 @@ pub trait BootstrapTable {
     /// Then, the bias is lowered until the algorithm either reaches a bias of 0, or the smallest
     /// bias that does not come with high uncertainty of the p-value.
     ///
-    /// Note that this function returns bootstrap counts, not proportions. To obtain the proportion,
-    /// divide the count through the replication count of the respective scale.
-    ///
-    /// Warning: This method assumes all replicate vectors are sorted in ascending order.
-    /// If the vectors are not sorted, the method returns nonsensical results.
-    ///
     /// # Smoothing
     /// To avoid numerical issues when estimating the parameters required by the AU test,
     /// the counts are smoothed.
@@ -100,35 +101,31 @@ pub trait BootstrapTable {
     /// # Parameters
     /// - `input_index` the index of the input sequence to the AU test for which to compute the BP
     ///   values.
-    /// - `threshold` the maximum difference in likelihood from the optimal likelihood that a
+    /// - `bias` the maximum difference in likelihood from the optimal likelihood that a
     ///   replicate can have to still count towards the Bootstrap Proportion.
-    fn compute_bp_values(&self, input_index: usize, threshold: f64) -> Box<[f64]> {
+    fn smooth_biased_bp(&self, input_index: usize, bias: f64) -> Box<[f64]> {
         self.get_delta_vectors(input_index)
             .map(|normal_lnl| {
                 let len = normal_lnl.len();
-                let discrete_count = normal_lnl
-                    .iter()
-                    .position(|&x| x > threshold)
-                    .unwrap_or(len);
+                let discrete_count = normal_lnl.iter().position(|&x| x > bias).unwrap_or(len);
 
                 let smoothed = if discrete_count < len {
                     if discrete_count == 0 {
                         if normal_lnl[1] > normal_lnl[0] {
-                            0.5 + (threshold - normal_lnl[0]) / (normal_lnl[1] - normal_lnl[0])
+                            0.5 + (bias - normal_lnl[0]) / (normal_lnl[1] - normal_lnl[0])
                         } else {
                             0.0
                         }
                     } else if normal_lnl[discrete_count] > normal_lnl[discrete_count - 1] {
                         -0.5 + discrete_count as f64
-                            + (threshold - normal_lnl[discrete_count - 1])
+                            + (bias - normal_lnl[discrete_count - 1])
                                 / (normal_lnl[discrete_count] - normal_lnl[discrete_count - 1])
                     } else {
                         0.5 + discrete_count as f64
                     }
                 } else if normal_lnl[len - 1] - normal_lnl[len - 2] > 0.0 {
                     len as f64 - 0.5
-                        + (threshold - normal_lnl[len - 1])
-                            / (normal_lnl[len - 1] - normal_lnl[len - 2])
+                        + (bias - normal_lnl[len - 1]) / (normal_lnl[len - 1] - normal_lnl[len - 2])
                 } else {
                     len as f64
                 };

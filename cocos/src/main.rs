@@ -271,7 +271,7 @@ fn main() {
 
     let canonical_bp_values = (0..bootstrap_replicates.num_trees())
         .map(|tree| {
-            bootstrap_replicates.compute_bp_values(tree, 0.0)[closest_scale]
+            bootstrap_replicates.smooth_biased_bp(tree, 0.0)[closest_scale]
                 / bootstrap_replicates.replication_counts()[closest_scale] as f64
         })
         .collect::<Vec<_>>();
