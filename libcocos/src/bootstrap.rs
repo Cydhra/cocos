@@ -1,6 +1,24 @@
 //! This module handles the RELL bootstrap method.
-//! Methods in this module take a matrix of log-likelihoods and approximate a bootstrap replicate
-//! by drawing from the log-likelihoods and summing them to obtain the likelihood of a replicate.
+//! Methods in this module take a table of log-likelihoods and approximate a bootstrap replicate
+//! by resampling columns of the table and summing the rows of the resulting resampled table
+//! to obtain the likelihoods of each input within the replicate.
+//!
+//! Given a set of [replication scales] and a matching set of [replication counts], bootstrapping
+//! will generate a set `N` of bootstrap replicates per `scale`, where `N` is the replication count
+//! of the respective scale.
+//! Each replicate is resampled (with replacement) from columns of the input log-likelihood table,
+//! and the  replication scale determines how many columns of the table will be sampled
+//! (where 1.0 means the replicate is generated from the same number of columns,
+//! but resampled randomly with replacement).
+//!
+//! The replicates are normalized after all of them have been sampled.
+//! Normalization means that for each replicate (one set of log-likelihoods, one for each input)
+//! the best-scoring input (highest likelihood) is determined, and then deltas are computed as
+//! the difference of log-likelihood for each input to the best input.
+//! The delta for the best input is the negative difference to the second-best tree (which might be
+//! zero if the second-best input has the same exact likelihood).
+//! The deltas are then sorted per-input, meaning for each input, one sorted vector of likelihood
+//! deltas per scale is computed.
 //!
 //! This was designed for phylogenetic trees, where drawing per-site log-likelihoods approximates
 //! the bootstrap resampling of the Multiple Sequence Alignment, even if the model parameters
@@ -9,6 +27,9 @@
 //! events to approximate a bootstrap resampling of the original dataset.
 //! The module makes no assumptions about the source of the log-likelihood and resamples at random
 //! with the provided random number generator.
+//!
+//! [replication scales]: DEFAULT_FACTORS
+//! [replication counts]: DEFAULT_REPLICATES
 
 use crate::vectors::dot_prod;
 use crate::{ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods};
@@ -23,6 +44,34 @@ pub const DEFAULT_FACTORS: [f64; 10] = [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 
 pub const DEFAULT_REPLICATES: [usize; 10] = [
     10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000,
 ];
+
+/// The bootstrap table grants access to vectors of delta log-likelihoods of the bootstrap replicates
+/// generated for the inputs.
+/// Read the [module documentation] to understand how bootstrap replicates are generated.
+///
+/// [module documentation]: crate::bootstrap
+pub trait BootstrapTable {
+    /// Get one slice of normalized delta-log-likelihoods per replicate scale for the specified input.
+    /// That is, for each replication scale, a sorted slice with `replication_count` entries is
+    /// returned for the given `input_index` which holds the log-likelihood delta to the next
+    /// competing input (negative, if this input is better).
+    fn get_delta_vectors(&self, input_index: usize) -> impl Iterator<Item = &[f64]>;
+
+    /// The number of scaling factors to the multiscale bootstrap process.
+    fn num_scales(&self) -> usize;
+
+    /// Get the scaling factors to the multiscale bootstrap process in the order of the replicate
+    /// matrices.
+    fn scales(&self) -> &[f64];
+
+    /// Get the numbers of replicates for each [scaling factor].
+    ///
+    /// [scaling factor]: Self::scales
+    fn replication_counts(&self) -> &[usize];
+
+    /// Get the number of input sequences to the bootstrap process that generated this instance.
+    fn num_trees(&self) -> usize;
+}
 
 /// A set of normalized bootstrap replicate likelihood matrices.
 /// More specifically, this struct contains one matrix of bootstrap replicates per scaling factor.
