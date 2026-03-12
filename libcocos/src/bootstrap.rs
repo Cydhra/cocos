@@ -76,7 +76,7 @@ pub trait BootstrapTable {
     /// maximum likelihood.
     ///
     /// At higher (or lower) thresholds, an artificial bias is introduced:
-    /// It biases the BP value towards (or away from) the true estimate
+    /// It biases the BP value away from the true estimate
     /// by (dis)counting replicates where the input had
     /// only a very slight likelihood delta to the best scoring input.
     ///
@@ -177,6 +177,7 @@ pub trait BootstrapTable {
 pub struct FullReplicates {
     /// A set of matrices, each matrix containing all bootstrap replicates for all trees of a single
     /// scaling factor, one matrix per scaling factor.
+    /// The replicates are sorted per-tree and so the columns in the table do not have meaning.
     replicates: Box<[Box<[f64]>]>,
 
     /// An array of scaling factors. For each factor, each tree generates `B` bootstrap replicates
@@ -188,7 +189,7 @@ pub struct FullReplicates {
     /// tree generates per scaling factor.
     replication_counts: Box<[usize]>,
 
-    /// Number of rows in the [`bp_values`] matrix.
+    /// Number of rows in the [`replicates`] matrix.
     num_trees: usize,
 }
 
@@ -268,6 +269,65 @@ impl BootstrapTable for FullReplicates {
 
     fn num_trees(&self) -> usize {
         self.num_trees
+    }
+}
+
+pub struct ApproximateReplicates {
+    /// A table of sorted replicate vectors for each input.
+    /// Only one table exists, since the rest of the tables are being approximated.
+    /// The replicates are sorted per-tree and so the columns in the table do not have meaning.
+    replicates: Box<[f64]>,
+
+    /// The scale at which replicates were generated.
+    scale: f64,
+
+    /// An array of scaling factors. These are the factors that the [`BootstrapTable`] approximates.
+    /// The scale that was actually used during bootstrapping is stored in `scale`.
+    ///
+    /// The delta vectors for the scales are exposed via approximation rather than from empirical
+    /// data.
+    ///
+    /// [`BootstrapTable`]: BootstrapTable
+    scales: Box<[f64]>,
+
+    /// How many replicates were generated.
+    /// Because the multiscale replicates are being approximated by only one replicate,
+    /// the count is equal for all scales.
+    replication_count: usize,
+
+    /// Number of rows in the [`replicates`] matrix.
+    num_trees: usize,
+}
+
+impl BootstrapTable for ApproximateReplicates {
+    fn get_delta_vectors(&self, input_index: usize) -> impl Iterator<Item = &[f64]> {
+        // self.scales
+        //     .iter()
+        //     .copied()
+        //     .map(|scale| &self.replicates[input_index * self.replication_count..(input_index + 1) * self.replication_count].iter().map(|rep| ) )
+        //
+        // self.replicates
+        //     .iter()
+        //     .zip(self.replication_counts.iter())
+        //     .map(move |(matrix, &count)| &matrix[input_index * count..(input_index + 1) * count])
+
+        todo!()
+    }
+
+    fn num_scales(&self) -> usize {
+        todo!()
+    }
+
+    fn scales(&self) -> &[f64] {
+        todo!()
+    }
+
+    fn replication_counts(&self) -> &[usize] {
+        todo!()
+    }
+
+    fn num_trees(&self) -> usize {
+        todo!()
     }
 }
 
