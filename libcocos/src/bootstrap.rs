@@ -60,6 +60,90 @@ pub trait BootstrapTable {
     /// scale.
     fn get_delta_vectors(&self, input_index: usize) -> impl Iterator<Item = &[f64]>;
 
+    /// Compute the Bootstrap Proportions (BP Values) from a smoothed empirical distribution function
+    /// derived from the bootstrap deltas.
+    ///
+    /// # Threshold
+    /// At threshold `0`, this function computes the canonical bootstrap counts (smoothed)
+    /// where each count is the number of bootstrap replicates where the resampled input yielded the
+    /// maximum likelihood.
+    ///
+    /// At higher (or lower) thresholds, an artificial bias is introduced:
+    /// It biases the BP value towards (or away from) the true estimate
+    /// by (dis)counting replicates where the input had
+    /// only a very slight likelihood delta to the best scoring input.
+    ///
+    /// To allow accurately estimating the distance of the input's likelihood vector from the
+    /// hypothesis' region boundary (see (<https://doi.org/10.1080/10635150290069913>),
+    /// the BP values in the AU-Test start with a bias corresponding to the median delta.
+    /// That is, if an input has a median log-likelihood delta of +50 points to the best competing
+    /// input across the replicates, AU estimation starts with a bias of +50:
+    /// All replicates with a delta lower than +50 points are counted toward the Bootstrap Proportion.
+    /// (A negative threshold means replicates are discounted unless the input was better than the
+    /// best competing input by at least the threshold).
+    /// Then, the bias is lowered until the algorithm either reaches a bias of 0, or the smallest
+    /// bias that does not come with high uncertainty of the p-value.
+    ///
+    /// Note that this function returns bootstrap counts, not proportions. To obtain the proportion,
+    /// divide the count through the replication count of the respective scale.
+    ///
+    /// Warning: This method assumes all replicate vectors are sorted in ascending order.
+    /// If the vectors are not sorted, the method returns nonsensical results.
+    ///
+    /// # Smoothing
+    /// To avoid numerical issues when estimating the parameters required by the AU test,
+    /// the counts are smoothed.
+    /// Smoothing linearly interpolates between two concrete counts depending on the threshold value.
+    /// That is, if the threshold is 50.0, and 100 bootstrap replicates have a delta lower than 50.0,
+    /// the result is interpolated between 100 and 101 depending on how close each are to the threshold.
+    ///
+    /// # Parameters
+    /// - `input_index` the index of the input sequence to the AU test for which to compute the BP
+    ///   values.
+    /// - `threshold` the maximum difference in likelihood from the optimal likelihood that a
+    ///   replicate can have to still count towards the Bootstrap Proportion.
+    fn compute_bp_values(&self, input_index: usize, threshold: f64) -> Box<[f64]> {
+        self.get_delta_vectors(input_index)
+            .map(|normal_lnl| {
+                let len = normal_lnl.len();
+                let discrete_count = normal_lnl
+                    .iter()
+                    .position(|&x| x > threshold)
+                    .unwrap_or(len);
+
+                let smoothed = if discrete_count < len {
+                    if discrete_count == 0 {
+                        if normal_lnl[1] > normal_lnl[0] {
+                            0.5 + (threshold - normal_lnl[0]) / (normal_lnl[1] - normal_lnl[0])
+                        } else {
+                            0.0
+                        }
+                    } else if normal_lnl[discrete_count] > normal_lnl[discrete_count - 1] {
+                        -0.5 + discrete_count as f64
+                            + (threshold - normal_lnl[discrete_count - 1])
+                                / (normal_lnl[discrete_count] - normal_lnl[discrete_count - 1])
+                    } else {
+                        0.5 + discrete_count as f64
+                    }
+                } else if normal_lnl[len - 1] - normal_lnl[len - 2] > 0.0 {
+                    len as f64 - 0.5
+                        + (threshold - normal_lnl[len - 1])
+                            / (normal_lnl[len - 1] - normal_lnl[len - 2])
+                } else {
+                    len as f64
+                };
+
+                if smoothed > len as f64 {
+                    len as f64
+                } else if smoothed < 0.0 {
+                    0.0
+                } else {
+                    smoothed
+                }
+            })
+            .collect()
+    }
+
     /// The number of scaling factors to the multiscale bootstrap process.
     fn num_scales(&self) -> usize;
 
@@ -162,76 +246,6 @@ impl FullReplicates {
     ) -> impl Iterator<Item = &mut [f64]> {
         let num_replicates = self.replication_counts[scale_index];
         self.replicates[scale_index].chunks_exact_mut(num_replicates)
-    }
-
-    /// Compute the Bootstrap Proportions from the empirical bootstrap distribution at the given
-    /// threshold.
-    /// At threshold `0`, the function computes the canonical bootstrap proportions
-    /// where each count is the number of bootstrap replicates where the resampled input yielded the
-    /// maximum likelihood.
-    ///
-    /// To allow accurately estimating the distance of the input's likelihood vector from the
-    /// hypothesis' region boundary (see (<https://doi.org/10.1080/10635150290069913>),
-    /// the BP values are first over-estimated by increasing the threshold.
-    /// Increasing it allows trees which have slightly suboptimal likelihoods
-    /// in a bootstrap replicate to count the replicate as well.
-    /// The BP values then continuously approach the true canonical BP values by lowering the threshold.
-    ///
-    /// This method computes the bootstrap counts of the tree `input_index` while also counting
-    /// bootstrap replicates where the tree has an up to `threshold` lower log-likelihood than the
-    /// best tree in that replicate. Note that the method does not compute proportions, but counts.
-    ///
-    /// To avoid numerical issues during numerical optimization, the count value is interpolated
-    /// to convert the empirical distribution of bootstrap counts into a continuous distribution.
-    ///
-    /// Warning: This method assumes all per-input normalized replicates are sorted in ascending order.
-    /// If the vectors are not sorted, the method returns nonsensical results.
-    ///
-    /// # Parameters
-    /// - `input_index` the index of the input sequence to the AU test for which to compute the BP
-    ///   values.
-    /// - `threshold` the maximum difference in likelihood from the optimal likelihood that a
-    ///   replicate can have to still count towards the Bootstrap Proportion.
-    pub fn compute_bp_values(&self, input_index: usize, threshold: f64) -> Box<[f64]> {
-        self.get_delta_vectors(input_index)
-            .map(|normal_lnl| {
-                let len = normal_lnl.len();
-                let discrete_count = normal_lnl
-                    .iter()
-                    .position(|&x| x > threshold)
-                    .unwrap_or(len);
-
-                let smoothed = if discrete_count < len {
-                    if discrete_count == 0 {
-                        if normal_lnl[1] > normal_lnl[0] {
-                            0.5 + (threshold - normal_lnl[0]) / (normal_lnl[1] - normal_lnl[0])
-                        } else {
-                            0.0
-                        }
-                    } else if normal_lnl[discrete_count] > normal_lnl[discrete_count - 1] {
-                        -0.5 + discrete_count as f64
-                            + (threshold - normal_lnl[discrete_count - 1])
-                                / (normal_lnl[discrete_count] - normal_lnl[discrete_count - 1])
-                    } else {
-                        0.5 + discrete_count as f64
-                    }
-                } else if normal_lnl[len - 1] - normal_lnl[len - 2] > 0.0 {
-                    len as f64 - 0.5
-                        + (threshold - normal_lnl[len - 1])
-                            / (normal_lnl[len - 1] - normal_lnl[len - 2])
-                } else {
-                    len as f64
-                };
-
-                if smoothed > len as f64 {
-                    len as f64
-                } else if smoothed < 0.0 {
-                    0.0
-                } else {
-                    smoothed
-                }
-            })
-            .collect()
     }
 }
 
