@@ -73,26 +73,24 @@ pub trait BootstrapTable {
     fn num_trees(&self) -> usize;
 }
 
-/// A set of normalized bootstrap replicate likelihood matrices.
+/// A set of (normalized) bootstrap replicate likelihood matrices.
 /// More specifically, this struct contains one matrix of bootstrap replicates per scaling factor.
 /// Each matrix contains `B` likelihoods for `N` input sequences,
 /// where `B` is the replication count for the scaling factor of that matrix,
 /// and `N` is the number of input sequences to the bootstrapping.
 ///
-/// The likelihood values are normalized, that is, the likelihoods are moved towards zero,
-/// where the best tree of each replicate has likelihood 0, and the other values are the difference
-/// to the best likelihood.
-/// This way, calculating the canonical BP values is equivalent to counting the zeros in each
-/// tree's matrix row.
-/// For more information about calculating BP values, refer to [`compute_bp_values`].
+/// Read the [module documentation] to understand how bootstrap replicates are generated.
+///
+/// This type holds one matrix per scale, representing a full multiscale bootstrap.
+/// Alternative implementations of [BootstrapTable] may approximate the multiscale bootstrap.
 ///
 /// The likelihood vectors of each input sequence have to be sorted.
 /// Writing unsorted sequences into this matrix prevents calculation of BP values.
 ///
-/// [`compute_bp_values`]: BootstrapReplicates::compute_bp_values
+/// [module documentation]: crate::bootstrap
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct BootstrapReplicates {
+pub struct FullReplicates {
     /// A set of matrices, each matrix containing all bootstrap replicates for all trees of a single
     /// scaling factor, one matrix per scaling factor.
     replicates: Box<[Box<[f64]>]>,
@@ -110,7 +108,7 @@ pub struct BootstrapReplicates {
     num_trees: usize,
 }
 
-impl BootstrapReplicates {
+impl FullReplicates {
     /// Initialize a new empty bootstrap list, initialized with the given array of scales and number
     /// of replicates.
     /// The bootstrap matrices can be initialized with ???
@@ -540,10 +538,10 @@ fn column_max(column: &[f64]) -> (f64, f64) {
 /// - `scale_index` the index of the scaling factor used for bootstrapping in the scaling factor
 ///   array.
 ///
-/// [`BootstrapReplicates`]: BootstrapReplicates
+/// [`BootstrapReplicates`]: FullReplicates
 /// [`bootstrap`]: bootstrap
 pub fn normalize_replicates(
-    bootstrap_replicates: &mut BootstrapReplicates,
+    bootstrap_replicates: &mut FullReplicates,
     replicate_likelihoods: &[Box<[f64]>],
     scale_index: usize,
 ) {
@@ -576,11 +574,11 @@ pub fn normalize_replicates(
 ///
 /// For a full explanation refer to [`normalize_replicates`].
 ///
-/// [`BootstrapReplicates`]: BootstrapReplicates
+/// [`BootstrapReplicates`]: FullReplicates
 #[cfg(feature = "rayon")]
 pub fn par_normalize_replicates(
     replicate_likelihoods: &[Box<[f64]>],
-    replicate_matrix: &mut BootstrapReplicates,
+    replicate_matrix: &mut FullReplicates,
     scale_index: usize,
 ) {
     use rayon::prelude::*;
@@ -628,11 +626,11 @@ pub fn bp_test<R>(
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
     replication_counts: &[usize],
-) -> BootstrapReplicates
+) -> FullReplicates
 where
     R: Rng,
 {
-    let mut replicate_matrix = BootstrapReplicates::new(
+    let mut replicate_matrix = FullReplicates::new(
         bootstrap_scales.to_vec().into_boxed_slice(),
         replication_counts.to_vec().into_boxed_slice(),
         likelihoods.num_trees(),
@@ -675,13 +673,13 @@ pub fn par_bp_test<R>(
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
     replication_counts: &[usize],
-) -> BootstrapReplicates
+) -> FullReplicates
 where
     R: Rng + Clone + Send,
 {
     use crate::bootstrap::par_bootstrap;
 
-    let mut replicate_matrix = BootstrapReplicates::new(
+    let mut replicate_matrix = FullReplicates::new(
         bootstrap_scales.to_vec().into_boxed_slice(),
         replication_counts.to_vec().into_boxed_slice(),
         likelihoods.num_trees(),
@@ -749,7 +747,7 @@ mod tests {
             vec![-2.0, -1.0, -0.5].into_boxed_slice(),
         ];
 
-        let mut replicate_matrix = BootstrapReplicates::new(Box::new([1.0]), Box::new([4]), 3);
+        let mut replicate_matrix = FullReplicates::new(Box::new([1.0]), Box::new([4]), 3);
         normalize_replicates(&mut replicate_matrix, replicates.as_slice(), 0);
 
         let mut iter = replicate_matrix.get_bootstrap_vectors(0);
