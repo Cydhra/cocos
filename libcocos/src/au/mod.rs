@@ -9,7 +9,7 @@
 //! [`get_au_value`]: get_au_values
 //! [`par_get_au_value`]: par_get_au_values
 
-use crate::{BootstrapReplicates, EPSILON};
+use crate::EPSILON;
 
 mod math;
 
@@ -21,6 +21,7 @@ mod wls;
 use crate::au::error::MathError;
 use crate::au::newton::NewtonProblem;
 use crate::au::wls::fit_model_bp_wls;
+use crate::bootstrap::BootstrapReplicates;
 
 /// Select the scaling factor of a [`BootstrapReplicates`] instance that is closest to 1, and
 /// return its index and its [replication count].
@@ -185,7 +186,7 @@ pub fn calc_au_value(
 pub fn get_au_values(bootstrap_replicates: &BootstrapReplicates) -> Box<[Result<f64, MathError>]> {
     let (closest_scale, num_replicates) = select_threshold_element(bootstrap_replicates);
 
-    (0..bootstrap_replicates.num_trees)
+    (0..bootstrap_replicates.num_trees())
         .map(|tree| {
             let threshold = bootstrap_replicates
                 .get_vectors(tree)
@@ -217,7 +218,7 @@ pub fn par_get_au_values(
     use rayon::prelude::*;
     let (closest_scale, num_replicates) = select_threshold_element(bootstrap_replicates);
 
-    (0..bootstrap_replicates.num_trees)
+    (0..bootstrap_replicates.num_trees())
         .into_par_iter()
         .map(|tree| {
             let threshold = bootstrap_replicates
