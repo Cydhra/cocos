@@ -51,10 +51,13 @@ pub const DEFAULT_REPLICATES: [usize; 10] = [
 ///
 /// [module documentation]: crate::bootstrap
 pub trait BootstrapTable {
-    /// Get one slice of normalized delta-log-likelihoods per replicate scale for the specified input.
+    /// Get the list of normalized delta log-likelihoods for each replicate scale for the specified
+    /// input index.
     /// That is, for each replication scale, a sorted slice with `replication_count` entries is
     /// returned for the given `input_index` which holds the log-likelihood delta to the next
     /// competing input (negative, if this input is better).
+    /// Here, `replication_count` is the number of replicates specified for the given replication
+    /// scale.
     fn get_delta_vectors(&self, input_index: usize) -> impl Iterator<Item = &[f64]>;
 
     /// The number of scaling factors to the multiscale bootstrap process.
@@ -66,7 +69,7 @@ pub trait BootstrapTable {
 
     /// Get the numbers of replicates for each [scaling factor].
     ///
-    /// [scaling factor]: Self::scales
+    /// [scaling factor]: crate::bootstrap
     fn replication_counts(&self) -> &[usize];
 
     /// Get the number of input sequences to the bootstrap process that generated this instance.
@@ -161,15 +164,6 @@ impl FullReplicates {
         self.replicates[scale_index].chunks_exact_mut(num_replicates)
     }
 
-    /// Get access to the bootstrap statistics of the input sequence with index `input_index`
-    /// at all bootstrap scales.
-    pub fn get_vectors(&self, input_index: usize) -> impl Iterator<Item = &[f64]> {
-        self.replicates
-            .iter()
-            .zip(self.replication_counts.iter())
-            .map(move |(matrix, &count)| &matrix[input_index * count..(input_index + 1) * count])
-    }
-
     /// Compute the Bootstrap Proportions from the empirical bootstrap distribution at the given
     /// threshold.
     /// At threshold `0`, the function computes the canonical bootstrap proportions
@@ -199,7 +193,7 @@ impl FullReplicates {
     /// - `threshold` the maximum difference in likelihood from the optimal likelihood that a
     ///   replicate can have to still count towards the Bootstrap Proportion.
     pub fn compute_bp_values(&self, input_index: usize, threshold: f64) -> Box<[f64]> {
-        self.get_vectors(input_index)
+        self.get_delta_vectors(input_index)
             .map(|normal_lnl| {
                 let len = normal_lnl.len();
                 let discrete_count = normal_lnl
@@ -239,27 +233,29 @@ impl FullReplicates {
             })
             .collect()
     }
+}
 
-    /// The number of scaling factors to the multiscale bootstrap process.
-    pub fn num_scales(&self) -> usize {
+impl BootstrapTable for FullReplicates {
+    fn get_delta_vectors(&self, input_index: usize) -> impl Iterator<Item = &[f64]> {
+        self.replicates
+            .iter()
+            .zip(self.replication_counts.iter())
+            .map(move |(matrix, &count)| &matrix[input_index * count..(input_index + 1) * count])
+    }
+
+    fn num_scales(&self) -> usize {
         self.scales.len()
     }
 
-    /// Get the scaling factors to the multiscale bootstrap process in the order of the replicate
-    /// matrices.
-    pub fn scales(&self) -> &[f64] {
+    fn scales(&self) -> &[f64] {
         &self.scales
     }
 
-    /// Get the numbers of replicates for each [scaling factor].
-    ///
-    /// [scaling factor]: Self::scales
-    pub fn replication_counts(&self) -> &[usize] {
+    fn replication_counts(&self) -> &[usize] {
         &self.replication_counts
     }
 
-    /// Get the number of input sequences to the bootstrap process that generated this instance.
-    pub fn num_trees(&self) -> usize {
+    fn num_trees(&self) -> usize {
         self.num_trees
     }
 }

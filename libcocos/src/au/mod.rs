@@ -21,7 +21,7 @@ mod wls;
 use crate::au::error::MathError;
 use crate::au::newton::NewtonProblem;
 use crate::au::wls::fit_model_bp_wls;
-use crate::bootstrap::FullReplicates;
+use crate::bootstrap::{BootstrapTable, FullReplicates};
 
 /// Select the scaling factor of a [`BootstrapReplicates`] instance that is closest to 1, and
 /// return its index and its [replication count].
@@ -189,7 +189,7 @@ pub fn get_au_values(bootstrap_replicates: &FullReplicates) -> Box<[Result<f64, 
     (0..bootstrap_replicates.num_trees())
         .map(|tree| {
             let threshold = bootstrap_replicates
-                .get_vectors(tree)
+                .get_delta_vectors(tree)
                 .nth(closest_scale)
                 .unwrap()[num_replicates / 2];
 
@@ -220,7 +220,7 @@ pub fn par_get_au_values(bootstrap_replicates: &FullReplicates) -> Box<[Result<f
         .into_par_iter()
         .map(|tree| {
             let threshold = bootstrap_replicates
-                .get_vectors(tree)
+                .get_delta_vectors(tree)
                 .nth(closest_scale)
                 .unwrap()[num_replicates / 2];
 

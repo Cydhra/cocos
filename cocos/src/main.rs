@@ -1,7 +1,9 @@
 use clap::*;
 use libcocos::au::error::MathError;
 use libcocos::au::{get_au_values, par_get_au_values};
-use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES, bp_test, par_bp_test};
+use libcocos::bootstrap::{
+    BootstrapTable, DEFAULT_FACTORS, DEFAULT_REPLICATES, bp_test, par_bp_test,
+};
 use rand::{RngCore, SeedableRng, rng};
 use rand_chacha::ChaCha8Rng;
 use rayon::{ThreadPoolBuilder, current_num_threads};
