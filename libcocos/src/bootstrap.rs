@@ -48,6 +48,55 @@ pub const DEFAULT_REPLICATES: [usize; 10] = [
     10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000,
 ];
 
+pub trait BootstrapReplicateTable {}
+
+/// A set of bootstrap replicates of a given scale
+pub struct SingleScaleBootstrap {
+    replicates: Box<[f64]>,
+    num_inputs: usize,
+}
+
+impl SingleScaleBootstrap {
+    /// New empty single-scale bootstrap table for `num_inputs` input sequences at `num_replicates`
+    /// replicates per input.
+    pub fn empty(num_inputs: usize, num_replicates: usize) -> Self {
+        let replicates = vec![0f64; num_inputs * num_replicates];
+
+        Self {
+            replicates: replicates.into_boxed_slice(),
+            num_inputs,
+        }
+    }
+
+    /// Access the bootstrap replicate at the given index.
+    /// A replicate contains one likelihood for each input sequence
+    pub fn replicate(&self, index: usize) -> &[f64] {
+        &self.replicates[index * self.num_inputs..(index + 1) * self.num_inputs]
+    }
+
+    /// Mutably access the bootstrap replicate at the given index.
+    /// A replicate contains one likelihood for each input sequence
+    pub fn replicate_mut(&mut self, index: usize) -> &mut [f64] {
+        &mut self.replicates[index * self.num_inputs..(index + 1) * self.num_inputs]
+    }
+
+    /// Iterator over all replicates in the table
+    pub fn all_replicates(&self) -> impl Iterator<Item = &[f64]> {
+        self.replicates.chunks_exact(self.num_inputs)
+    }
+
+    /// Iterator with mutable slices of all replicates in the table
+    pub fn all_replicates_mut(&mut self) -> impl Iterator<Item = &mut [f64]> {
+        self.replicates.chunks_exact_mut(self.num_inputs)
+    }
+}
+
+pub struct MultiScaleBootstrap {
+    replicates: Box<[SingleScaleBootstrap]>,
+    scales: Box<[f64]>,
+    replicate_counts: Box<[usize]>,
+}
+
 /// Generate a random vector of per-site weights, indicating how often each site of an alignment got
 /// selected in bootstrap replication.
 /// This vector can be multiplied with each input sequence to generate a set of `N` replicate
@@ -140,23 +189,23 @@ fn bootstrap_slice<R: Rng>(
     num_replicates: usize,
     num_sites: usize,
     replication_factor: f64,
-) -> Box<[Box<[f64]>]> {
-    let mut results = Vec::with_capacity(num_replicates);
+) -> SingleScaleBootstrap {
+    let mut results = SingleScaleBootstrap::empty(likelihoods.len(), num_replicates);
 
-    for _ in 0..num_replicates {
+    for rep in 0..num_replicates {
         let weights = generate_weight_vector(rng, num_sites, replication_factor);
 
         // compute the sum of site log-likelihoods weighted by the given selection vector
         // and scale it by the replication_factor to make it comparable to the original log-likelihood
-        let bootstrap_replicate = likelihoods
+        likelihoods
             .iter()
-            .map(|site_lh| compute_replicate_likelihood(site_lh, &weights) / replication_factor)
-            .collect();
-
-        results.push(bootstrap_replicate);
+            .zip(results.replicate_mut(rep))
+            .for_each(|(site_lh, target)| {
+                *target = compute_replicate_likelihood(site_lh, &weights) / replication_factor
+            })
     }
 
-    results.into_boxed_slice()
+    results
 }
 
 /// Given a matrix of N log-likelihood sequences,
@@ -182,7 +231,7 @@ pub fn bootstrap<R: Rng>(
     likelihoods: &SiteLikelihoodTable,
     num_replicates: usize,
     replication_factor: f64,
-) -> Box<[Box<[f64]>]> {
+) -> SingleScaleBootstrap {
     assert!(num_replicates > 0, "cannot bootstrap with 0 replicates");
     assert!(
         replication_factor > 0.0,
@@ -221,7 +270,7 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
     likelihoods: &SiteLikelihoodTable,
     num_replicates: usize,
     replication_factor: f64,
-) -> Box<[Box<[f64]>]> {
+) -> SingleScaleBootstrap {
     use rayon::current_num_threads;
     use rayon::prelude::*;
 
@@ -251,24 +300,25 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
         })
         .collect::<Box<_>>();
 
-    let mut results = vec![vec![0f64; likelihoods.num_trees()].into_boxed_slice(); num_replicates];
+    let mut results = SingleScaleBootstrap::empty(likelihoods.num_trees(), num_replicates);
 
     // concatenate the trees from each chunk to make all replicates complete. This time we can
     // divide work between threads by splitting across replicates
     results
-        .par_iter_mut()
+        .all_replicates_mut()
         .enumerate()
-        .for_each(|(replicate, target_tree_likelihoods)| {
+        .par_bridge()
+        .for_each(|(replicate, concatenated_likelihoods)| {
             partial_replicates
                 .iter()
                 .for_each(|(chunk_index, bootstrap_vec)| {
                     let offset = chunk_index * regular_chunk_len;
-                    let trees = &bootstrap_vec[replicate];
-                    target_tree_likelihoods[offset..offset + trees.len()].copy_from_slice(trees);
+                    let trees = &bootstrap_vec.replicate(replicate);
+                    concatenated_likelihoods[..].copy_from_slice(trees);
                 });
         });
 
-    results.into_boxed_slice()
+    results
 }
 
 /// Convenience method to perform the multiscale BP-test.
@@ -408,15 +458,20 @@ mod tests {
         // compared with the global maximum likelihood (replicate) tree, or with the second best
         // tree in case of the best tree.
 
-        let replicates = [
-            vec![-2.0, -1.9, -2.0].into_boxed_slice(),
-            vec![-2.0, -2.0, -1.0].into_boxed_slice(),
-            vec![-2.0, -1.0, -1.0].into_boxed_slice(),
-            vec![-2.0, -1.0, -0.5].into_boxed_slice(),
-        ];
+        #[rustfmt::skip]
+        let replicates = Box::new([
+            -2.0, -1.9, -2.0,
+            -2.0, -2.0, -1.0,
+            -2.0, -1.0, -1.0,
+            -2.0, -1.0, -0.5,
+        ]);
+        let replicate_table = SingleScaleBootstrap {
+            replicates,
+            num_inputs: 3,
+        };
 
         let mut replicate_matrix = ReplicateDeltas::new(Box::new([1.0]), Box::new([4]), 3);
-        compute_delta_table(&mut replicate_matrix, replicates.as_slice(), 0);
+        compute_delta_table(&mut replicate_matrix, &replicate_table, 0);
 
         let mut iter = replicate_matrix.get_bootstrap_vectors(0);
 

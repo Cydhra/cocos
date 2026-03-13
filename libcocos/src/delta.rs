@@ -1,3 +1,5 @@
+use crate::bootstrap::SingleScaleBootstrap;
+
 /// The bootstrap table grants access to vectors of delta log-likelihoods of the bootstrap replicates
 /// generated for the inputs.
 /// It contains a set of matrices, one matrix per replicate scale.
@@ -260,13 +262,13 @@ impl BootstrapDeltaTable for ReplicateDeltas {
 /// This method is the kernel used by [`compute_delta_table`] and [`par_compute_delta_table`].
 fn compute_likelihood_deltas(
     target: &mut [f64],
-    replicate_likelihoods: &[Box<[f64]>],
+    replicate_likelihoods: &SingleScaleBootstrap,
     maxima: &[(f64, f64)],
     vector_index: usize,
 ) {
     target
         .iter_mut()
-        .zip(replicate_likelihoods.iter())
+        .zip(replicate_likelihoods.all_replicates())
         .enumerate()
         .for_each(|(i, (target, replicate))| {
             let (best, follow_up) = maxima[i];
@@ -318,7 +320,7 @@ fn column_max(column: &[f64]) -> (f64, f64) {
 /// [`bootstrap`]: bootstrap
 pub fn compute_delta_table(
     bootstrap_replicates: &mut ReplicateDeltas,
-    replicate_likelihoods: &[Box<[f64]>],
+    replicate_likelihoods: &SingleScaleBootstrap,
     scale_index: usize,
 ) {
     // Calculate the maximum likelihood for each bootstrap replicate. Technically the paper calls
@@ -326,7 +328,7 @@ pub fn compute_delta_table(
     // is never important whether the statistic is zero or below zero, we can just use the maximum
     // every time, accepting that the best input for the replicate gets likelihood zero
     let boot_max: Box<[_]> = replicate_likelihoods
-        .iter()
+        .all_replicates()
         .map(|replicate| column_max(replicate))
         .collect();
 
@@ -353,7 +355,7 @@ pub fn compute_delta_table(
 /// [`BootstrapReplicates`]: ReplicateDeltas
 #[cfg(feature = "rayon")]
 pub fn par_compute_delta_table(
-    replicate_likelihoods: &[Box<[f64]>],
+    replicate_likelihoods: &SingleScaleBootstrap,
     replicate_matrix: &mut ReplicateDeltas,
     scale_index: usize,
 ) {
@@ -361,7 +363,8 @@ pub fn par_compute_delta_table(
 
     // for comments on this method see sequential version
     let boot_max: Box<[_]> = replicate_likelihoods
-        .par_iter()
+        .all_replicates()
+        .par_bridge()
         .map(|replicate| column_max(replicate))
         .collect();
     replicate_matrix
