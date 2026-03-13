@@ -21,29 +21,29 @@ mod wls;
 use crate::au::error::MathError;
 use crate::au::newton::NewtonProblem;
 use crate::au::wls::fit_model_bp_wls;
-use crate::bootstrap::{BootstrapTable, FullReplicates};
+use crate::delta::{BootstrapDeltaTable, ReplicateDeltas};
 
 /// Select the scaling factor of a [`BootstrapReplicates`] instance that is closest to 1, and
 /// return its index and its [replication count].
 /// Using these parameters, we can select the initial threshold for the BP convergence during AU
 /// estimation.
 ///
-/// [`BootstrapReplicates`]: FullReplicates
-/// [replication count]: FullReplicates::replication_counts
-fn select_threshold_element(bootstrap_replicates: &FullReplicates) -> (usize, usize) {
+/// [`BootstrapReplicates`]: ReplicateDeltas
+/// [replication count]: ReplicateDeltas::replicate_counts
+fn select_threshold_element(bootstrap_replicates: &ReplicateDeltas) -> (usize, usize) {
     let closest_scale = bootstrap_replicates
-        .scales()
+        .bootstrap_scales()
         .iter()
         .enumerate()
         .min_by(|(_, a), (_, b)| (1.0 - *a).abs().total_cmp(&(1.0 - *b).abs()))
         .unwrap()
         .0;
-    let num_replicates = bootstrap_replicates.replication_counts()[closest_scale];
+    let num_replicates = bootstrap_replicates.replicate_counts()[closest_scale];
 
     (closest_scale, num_replicates)
 }
 
-/// Perform the AU test on one input of the [`FullReplicates`] instance.
+/// Perform the AU test on one input of the [`ReplicateDeltas`] instance.
 ///
 /// The method begins fitting the signed distance and curvature parameters of the bootstrap input
 /// vector using the [WLS method].
@@ -69,7 +69,7 @@ fn select_threshold_element(bootstrap_replicates: &FullReplicates) -> (usize, us
 /// The `MathError` may still contain a p-value.
 /// It is left to the application designer to decide whether this p-value can be trusted.
 pub fn calc_au_value(
-    bootstrap_replicates: &FullReplicates,
+    bootstrap_replicates: &ReplicateDeltas,
     tree: usize,
     initial_threshold: f64,
 ) -> Result<f64, MathError> {
@@ -87,15 +87,15 @@ pub fn calc_au_value(
 
         let params = fit_model_bp_wls(
             &bp_values,
-            bootstrap_replicates.scales(),
-            bootstrap_replicates.replication_counts(),
+            bootstrap_replicates.bootstrap_scales(),
+            bootstrap_replicates.replicate_counts(),
         );
 
         if let Ok((c, d)) = params {
             let mut problem = NewtonProblem::new(
                 &bp_values,
-                bootstrap_replicates.scales(),
-                bootstrap_replicates.replication_counts(),
+                bootstrap_replicates.bootstrap_scales(),
+                bootstrap_replicates.replicate_counts(),
                 d,
                 c,
             );
@@ -151,7 +151,7 @@ pub fn calc_au_value(
     })
 }
 
-/// Perform the AU test on all inputs in the [`FullReplicates`] instance.
+/// Perform the AU test on all inputs in the [`ReplicateDeltas`] instance.
 ///
 /// The method begins fitting the signed distance and curvature parameters of any bootstrap
 /// vector using the [WLS method].
@@ -183,7 +183,7 @@ pub fn calc_au_value(
 /// [Newton optimization]: newton::fit_model_bp_newton
 /// [`MathError::ConvergenceFailed`]: MathError::ConvergenceFailed
 /// [`MathErrors`]: MathError
-pub fn get_au_values(bootstrap_replicates: &FullReplicates) -> Box<[Result<f64, MathError>]> {
+pub fn get_au_values(bootstrap_replicates: &ReplicateDeltas) -> Box<[Result<f64, MathError>]> {
     let (closest_scale, num_replicates) = select_threshold_element(bootstrap_replicates);
 
     (0..bootstrap_replicates.num_trees())
@@ -198,7 +198,7 @@ pub fn get_au_values(bootstrap_replicates: &FullReplicates) -> Box<[Result<f64, 
         .collect()
 }
 
-/// Perform the AU test on all trees in the [`FullReplicates`] instance in parallel.
+/// Perform the AU test on all trees in the [`ReplicateDeltas`] instance in parallel.
 /// For full documentation see [`get_au_values`].
 ///
 /// # Parallelization
@@ -212,7 +212,7 @@ pub fn get_au_values(bootstrap_replicates: &FullReplicates) -> Box<[Result<f64, 
 ///
 /// [`get_au_values`]: get_au_values
 #[cfg(feature = "rayon")]
-pub fn par_get_au_values(bootstrap_replicates: &FullReplicates) -> Box<[Result<f64, MathError>]> {
+pub fn par_get_au_values(bootstrap_replicates: &ReplicateDeltas) -> Box<[Result<f64, MathError>]> {
     use rayon::prelude::*;
     let (closest_scale, num_replicates) = select_threshold_element(bootstrap_replicates);
 

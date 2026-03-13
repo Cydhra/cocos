@@ -1,9 +1,8 @@
 use clap::*;
 use libcocos::au::error::MathError;
 use libcocos::au::{get_au_values, par_get_au_values};
-use libcocos::bootstrap::{
-    BootstrapTable, DEFAULT_FACTORS, DEFAULT_REPLICATES, bp_test, par_bp_test,
-};
+use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES, bp_test, par_bp_test};
+use libcocos::delta::BootstrapDeltaTable;
 use rand::{RngCore, SeedableRng, rng};
 use rand_chacha::ChaCha8Rng;
 use rayon::{ThreadPoolBuilder, current_num_threads};
@@ -262,7 +261,7 @@ fn main() {
 
     // select scale closest to 1
     let closest_scale = bootstrap_replicates
-        .scales()
+        .bootstrap_scales()
         .iter()
         .enumerate()
         .min_by(|(_, a), (_, b)| (1.0 - *a).abs().total_cmp(&(1.0 - *b).abs()))
@@ -272,7 +271,7 @@ fn main() {
     let canonical_bp_values = (0..bootstrap_replicates.num_trees())
         .map(|tree| {
             bootstrap_replicates.smooth_biased_bp(tree, 0.0)[closest_scale]
-                / bootstrap_replicates.replication_counts()[closest_scale] as f64
+                / bootstrap_replicates.replicate_counts()[closest_scale] as f64
         })
         .collect::<Vec<_>>();
     output::print_tsv(writer, canonical_bp_values, au_values).unwrap_or_else(|e| {

@@ -30,6 +30,8 @@ pub mod au;
 
 pub mod bootstrap;
 
+pub mod delta;
+
 pub(crate) mod vectors;
 
 /// An epsilon for tests for zero. Values smaller than this value are considered to be zero. Note

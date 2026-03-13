@@ -3,14 +3,15 @@
 //! by resampling columns of the table and summing the rows of the resulting resampled table
 //! to obtain the likelihoods of each input within the replicate.
 //!
-//! Given a set of [replication scales] and a matching set of [replication counts], bootstrapping
-//! will generate a set `N` of bootstrap replicates per `scale`, where `N` is the replication count
-//! of the respective scale.
+//! Given a set of [bootstrap scales] and a matching set of [replicate counts], bootstrapping
+//! will generate a set `B` of bootstrap replicates per `scale`, where `B` is the replicate count
+//! of the respective bootstrap scale.
 //! Each replicate is resampled (with replacement) from columns of the input log-likelihood table,
-//! and the  replication scale determines how many columns of the table will be sampled
-//! (where 1.0 means the replicate is generated from the same number of columns,
-//! but resampled randomly with replacement).
+//! and the  bootstrap scale determines the factor to the column count used for resampling.
+//! For example, a scale of 1.5 means the resampling uses 1.5 times the number of columns of the input
+//! sequences.
 //!
+//! # Deltas
 //! The replicates are normalized after all of them have been sampled.
 //! Normalization means that for each replicate (one set of log-likelihoods, one for each input)
 //! the best-scoring input (highest likelihood) is determined, and then deltas are computed as
@@ -20,6 +21,7 @@
 //! The deltas are then sorted per-input, meaning for each input, one sorted vector of likelihood
 //! deltas per scale is computed.
 //!
+//! # RELL Bootstrap
 //! This was designed for phylogenetic trees, where drawing per-site log-likelihoods approximates
 //! the bootstrap resampling of the Multiple Sequence Alignment, even if the model parameters
 //! are not optimized for the resampled dataset.
@@ -28,9 +30,10 @@
 //! The module makes no assumptions about the source of the log-likelihood and resamples at random
 //! with the provided random number generator.
 //!
-//! [replication scales]: DEFAULT_FACTORS
-//! [replication counts]: DEFAULT_REPLICATES
+//! [bootstrap scales]: DEFAULT_FACTORS
+//! [replicate counts]: DEFAULT_REPLICATES
 
+use crate::delta::{ReplicateDeltas, compute_delta_table, par_compute_delta_table};
 use crate::vectors::dot_prod;
 use crate::{ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods};
 use rand::Rng;
@@ -45,250 +48,34 @@ pub const DEFAULT_REPLICATES: [usize; 10] = [
     10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000,
 ];
 
-/// The bootstrap table grants access to vectors of delta log-likelihoods of the bootstrap replicates
-/// generated for the inputs.
-/// Read the [module documentation] to understand how bootstrap replicates are generated.
-///
-/// [module documentation]: crate::bootstrap
-pub trait BootstrapTable {
-    /// Get the list of normalized delta log-likelihoods for each replicate scale for the specified
-    /// input index.
-    /// That is, for each replication scale, a sorted slice with `replication_count` entries is
-    /// returned for the given `input_index` which holds the log-likelihood delta to the next
-    /// competing input (negative, if this input is better).
-    /// Here, `replication_count` is the number of replicates specified for the given replication
-    /// scale.
-    fn get_delta_vectors(&self, input_index: usize) -> impl Iterator<Item = &[f64]>;
-
-    /// Compute the Bootstrap Proportions (BP Values) from a smoothed empirical distribution function
-    /// derived from the bootstrap deltas.
-    ///
-    /// Note that this function returns bootstrap counts rather than proportions.
-    /// To obtain the proportion,
-    /// divide the count through the replication count of the respective scale.
-    ///
-    /// Warning: This method assumes all replicate vectors are sorted in ascending order.
-    /// If the vectors are not sorted, the method returns nonsensical results.
-    ///
-    /// # Threshold
-    /// At threshold `0`, this function computes the canonical bootstrap counts (smoothed)
-    /// where each count is the number of bootstrap replicates where the resampled input yielded the
-    /// maximum likelihood.
-    ///
-    /// At higher (or lower) thresholds, an artificial bias is introduced:
-    /// It biases the BP value towards (or away from) the true estimate
-    /// by (dis)counting replicates where the input had
-    /// only a very slight likelihood delta to the best scoring input.
-    ///
-    /// To allow accurately estimating the distance of the input's likelihood vector from the
-    /// hypothesis' region boundary (see (<https://doi.org/10.1080/10635150290069913>),
-    /// the BP values in the AU-Test start with a bias corresponding to the median delta.
-    /// That is, if an input has a median log-likelihood delta of +50 points to the best competing
-    /// input across the replicates, AU estimation starts with a bias of +50:
-    /// All replicates with a delta lower than +50 points are counted toward the Bootstrap Proportion.
-    /// (A negative threshold means replicates are discounted unless the input was better than the
-    /// best competing input by at least the threshold).
-    /// Then, the bias is lowered until the algorithm either reaches a bias of 0, or the smallest
-    /// bias that does not come with high uncertainty of the p-value.
-    ///
-    /// # Smoothing
-    /// To avoid numerical issues when estimating the parameters required by the AU test,
-    /// the counts are smoothed.
-    /// Smoothing linearly interpolates between two concrete counts depending on the threshold value.
-    /// That is, if the threshold is 50.0, and 100 bootstrap replicates have a delta lower than 50.0,
-    /// the result is interpolated between 100 and 101 depending on how close each are to the threshold.
-    ///
-    /// # Parameters
-    /// - `input_index` the index of the input sequence to the AU test for which to compute the BP
-    ///   values.
-    /// - `bias` the maximum difference in likelihood from the optimal likelihood that a
-    ///   replicate can have to still count towards the Bootstrap Proportion.
-    fn smooth_biased_bp(&self, input_index: usize, bias: f64) -> Box<[f64]> {
-        self.get_delta_vectors(input_index)
-            .map(|normal_lnl| {
-                let len = normal_lnl.len();
-                let discrete_count = normal_lnl.iter().position(|&x| x > bias).unwrap_or(len);
-
-                let smoothed = if discrete_count < len {
-                    if discrete_count == 0 {
-                        if normal_lnl[1] > normal_lnl[0] {
-                            0.5 + (bias - normal_lnl[0]) / (normal_lnl[1] - normal_lnl[0])
-                        } else {
-                            0.0
-                        }
-                    } else if normal_lnl[discrete_count] > normal_lnl[discrete_count - 1] {
-                        -0.5 + discrete_count as f64
-                            + (bias - normal_lnl[discrete_count - 1])
-                                / (normal_lnl[discrete_count] - normal_lnl[discrete_count - 1])
-                    } else {
-                        0.5 + discrete_count as f64
-                    }
-                } else if normal_lnl[len - 1] - normal_lnl[len - 2] > 0.0 {
-                    len as f64 - 0.5
-                        + (bias - normal_lnl[len - 1]) / (normal_lnl[len - 1] - normal_lnl[len - 2])
-                } else {
-                    len as f64
-                };
-
-                if smoothed > len as f64 {
-                    len as f64
-                } else if smoothed < 0.0 {
-                    0.0
-                } else {
-                    smoothed
-                }
-            })
-            .collect()
-    }
-
-    /// The number of scaling factors to the multiscale bootstrap process.
-    fn num_scales(&self) -> usize;
-
-    /// Get the scaling factors to the multiscale bootstrap process in the order of the replicate
-    /// matrices.
-    fn scales(&self) -> &[f64];
-
-    /// Get the numbers of replicates for each [scaling factor].
-    ///
-    /// [scaling factor]: crate::bootstrap
-    fn replication_counts(&self) -> &[usize];
-
-    /// Get the number of input sequences to the bootstrap process that generated this instance.
-    fn num_trees(&self) -> usize;
-}
-
-/// A set of (normalized) bootstrap replicate likelihood matrices.
-/// More specifically, this struct contains one matrix of bootstrap replicates per scaling factor.
-/// Each matrix contains `B` likelihoods for `N` input sequences,
-/// where `B` is the replication count for the scaling factor of that matrix,
-/// and `N` is the number of input sequences to the bootstrapping.
-///
-/// Read the [module documentation] to understand how bootstrap replicates are generated.
-///
-/// This type holds one matrix per scale, representing a full multiscale bootstrap.
-/// Alternative implementations of [BootstrapTable] may approximate the multiscale bootstrap.
-///
-/// The likelihood vectors of each input sequence have to be sorted.
-/// Writing unsorted sequences into this matrix prevents calculation of BP values.
-///
-/// [module documentation]: crate::bootstrap
-#[derive(Clone, Debug)]
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-pub struct FullReplicates {
-    /// A set of matrices, each matrix containing all bootstrap replicates for all trees of a single
-    /// scaling factor, one matrix per scaling factor.
-    replicates: Box<[Box<[f64]>]>,
-
-    /// An array of scaling factors. For each factor, each tree generates `B` bootstrap replicates
-    /// with a sequence length equal to the original sequence length multiplied by the factor.
-    /// The number of replicates `B` is stored in [`scales`].
-    scales: Box<[f64]>,
-
-    /// An array with the same size as [`scales`], indicating how many bootstrap replicates each
-    /// tree generates per scaling factor.
-    replication_counts: Box<[usize]>,
-
-    /// Number of rows in the [`bp_values`] matrix.
-    num_trees: usize,
-}
-
-impl FullReplicates {
-    /// Initialize a new empty bootstrap list, initialized with the given array of scales and number
-    /// of replicates.
-    /// The bootstrap matrices can be initialized with ???
-    ///
-    /// # Parameters
-    /// - `scales` The array of scaling factors that were used during bootstrapping. Each tree has
-    ///   one BP value per scaling factor.
-    /// - `num_replicates` The array of replication numbers, i.e., the `i`-th value indicates how
-    ///   many bootstrap replicates were generated for the `i`-th BP value of each tree.
-    /// - `num_tree` for how many trees the matrix is to be generated.
-    ///
-    /// [`scale_bp_values_mut`]: Self::scale_bp_values_mut
-    pub fn new(scales: Box<[f64]>, replication_counts: Box<[usize]>, num_trees: usize) -> Self {
-        // allocate the arrays for the bootstrap statistics
-        let mut replicate_vector = Vec::with_capacity(scales.len());
-        for &count in &replication_counts {
-            replicate_vector.push(vec![0f64; count * num_trees].into_boxed_slice());
-        }
-
-        Self {
-            replicates: replicate_vector.into_boxed_slice(),
-            scales,
-            replication_counts,
-            num_trees,
-        }
-    }
-
-    /// Get access to the vectors containing the bootstrap replicates for each tree at a
-    /// given `scale_index`. That is, given the index `scale_index` of a scaling factor,
-    /// get an iterator over all [normalized] bootstrap likelihood vectors associated with the
-    /// inputs to the bootstrap algorithm (one vector per input sequence).
-    ///
-    /// [normalized]: bootstrap::normalize_replicates
-    pub fn get_bootstrap_vectors(&self, scale_index: usize) -> impl Iterator<Item = &[f64]> {
-        let num_replicates = self.replication_counts[scale_index];
-        self.replicates[scale_index].chunks_exact(num_replicates)
-    }
-
-    /// Get mutable access to the vectors containing the bootstrap replicates for each tree at a
-    /// given `scale_index`. That is, given the index `scale_index` of a scaling factor,
-    /// get an iterator over all [normalized] bootstrap likelihood vectors associated with the
-    /// inputs to the bootstrap algorithm (one vector per input sequence).
-    ///
-    /// [normalized]: bootstrap::normalize_replicates
-    pub fn get_bootstrap_vectors_mut(
-        &mut self,
-        scale_index: usize,
-    ) -> impl Iterator<Item = &mut [f64]> {
-        let num_replicates = self.replication_counts[scale_index];
-        self.replicates[scale_index].chunks_exact_mut(num_replicates)
-    }
-}
-
-impl BootstrapTable for FullReplicates {
-    fn get_delta_vectors(&self, input_index: usize) -> impl Iterator<Item = &[f64]> {
-        self.replicates
-            .iter()
-            .zip(self.replication_counts.iter())
-            .map(move |(matrix, &count)| &matrix[input_index * count..(input_index + 1) * count])
-    }
-
-    fn num_scales(&self) -> usize {
-        self.scales.len()
-    }
-
-    fn scales(&self) -> &[f64] {
-        &self.scales
-    }
-
-    fn replication_counts(&self) -> &[usize] {
-        &self.replication_counts
-    }
-
-    fn num_trees(&self) -> usize {
-        self.num_trees
-    }
-}
-
-/// Generate a vector of per-site weights, indicating how often each site of an alignment got
+/// Generate a random vector of per-site weights, indicating how often each site of an alignment got
 /// selected in bootstrap replication.
+/// This vector can be multiplied with each input sequence to generate a set of `N` replicate
+/// likelihoods that are each drawn from the same columns across all input sequences.
+/// When repeated `B` times, a `N x B` matrix of bootstrap replicates is generated.
+///
+/// # Replicate Scales
+/// The bootstrapping of the AU test is a multiscale bootstrap scheme.
+/// The `bootstrap_scale` of the bootstrap process indicates how many columns are selected (with replacement)
+/// from the input sequences.
+/// Therefore, the sum of entries in the weight vector corresponds to `bootstrap_scale * M`,
+/// where `M` is the input sequence length.
 ///
 /// # Parameters
 /// - `num_sites` how many sites the original alignment has, minimum of 1
-/// - `replication_factor` the ratio between the number of original sites and the number of sites in
+/// - `bootstrap_scale` the ratio between the number of original sites and the number of sites in
 ///   the bootstrap replicate. Cannot be negative or zero.
 ///
 /// # Panic
-/// Panics if `num_sites` is zero, or `replication_factor` isn't a strictly positive number.
-pub fn generate_selection_vector<R: Rng>(
+/// Panics if `num_sites` is zero, or `bootstrap_scale` isn't a strictly positive number.
+pub fn generate_weight_vector<R: Rng>(
     rng: &mut R,
     num_sites: usize,
-    replication_factor: f64,
+    bootstrap_scale: f64,
 ) -> ResamplingWeights {
     assert!(num_sites > 0, "cannot bootstrap an alignment of size 0");
     assert!(
-        replication_factor > 0.0,
+        bootstrap_scale > 0.0,
         "replication_factor cannot be negative or zero"
     );
 
@@ -296,7 +83,7 @@ pub fn generate_selection_vector<R: Rng>(
     let distribution = Uniform::new(0, num_sites).unwrap();
 
     rng.sample_iter(distribution)
-        .take((num_sites as f64 * replication_factor) as usize)
+        .take((num_sites as f64 * bootstrap_scale) as usize)
         .for_each(|site| selection_vector[site] += 1.0);
 
     selection_vector
@@ -311,11 +98,12 @@ pub fn generate_selection_vector<R: Rng>(
 /// - `site_lh` a vector containing site log-likelihood values for a tree
 /// - `selection` a vector containing weights for each site of the site-likelihood vector indicating
 ///   how often the site was chosen during bootstrap selection. This vector can be generated with
-///   [`generate_selection_vector`]
+///   [`generate_weight_vector`]
 ///
 /// # Panic
 /// Panics if the `site_lh` vector and the `selection` vector have different lengths.
-/// [`generate_selection_vector`]: generate_selection_vector
+///
+/// [`generate_weight_vector`]: generate_weight_vector
 pub fn compute_replicate_likelihood(
     site_lh: &SiteLikelihoods,
     selection: &ResamplingWeights,
@@ -328,9 +116,10 @@ pub fn compute_replicate_likelihood(
 }
 
 /// Generate `num_replicates` bootstrap replicates for each log-likelihood sequence and calculate
-/// their log-likelihood value. This implements the actual work of bootstrapping, but operates on
-/// a slice of [`SiteLikelihoods`] vectors, making this function the kernel to the sequential
-/// and parallel bootstrapping algorithms.
+/// their compound log-likelihood value.
+/// This implements the actual work of bootstrapping
+/// but operates on a slice of [`SiteLikelihoods`] vectors,
+/// making this function the kernel to the sequential and parallel bootstrapping algorithms.
 ///
 /// # Parameters
 /// - `rng` random number generator state
@@ -355,7 +144,7 @@ fn bootstrap_slice<R: Rng>(
     let mut results = Vec::with_capacity(num_replicates);
 
     for _ in 0..num_replicates {
-        let weights = generate_selection_vector(rng, num_sites, replication_factor);
+        let weights = generate_weight_vector(rng, num_sites, replication_factor);
 
         // compute the sum of site log-likelihoods weighted by the given selection vector
         // and scale it by the replication_factor to make it comparable to the original log-likelihood
@@ -372,7 +161,7 @@ fn bootstrap_slice<R: Rng>(
 
 /// Given a matrix of N log-likelihood sequences,
 /// generate `num_replicates` bootstrap replicates for each sequence and calculate
-/// their log-likelihood value.
+/// their compound log-likelihood value.
 ///
 /// # Parameters
 /// - `rng` random number generator state
@@ -482,134 +271,6 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
     results.into_boxed_slice()
 }
 
-/// Given a matrix of replicates, subtract the maximum of each full replicate of the likelihood for
-/// the given tree and write the result into `target`.
-/// The tree is identified by `vector_index`, meaning every `vector_index`-th element of each
-/// replicate in `replicate_likelihoods`.
-/// The maximum of each `replicate` is pre-calculated in the `maxima` array.
-///
-/// This method is the kernel used by [`normalize_replicates`] and [`par_normalize_replicates`].
-fn normalize_replicate_vector(
-    target: &mut [f64],
-    replicate_likelihoods: &[Box<[f64]>],
-    maxima: &[(f64, f64)],
-    vector_index: usize,
-) {
-    target
-        .iter_mut()
-        .zip(replicate_likelihoods.iter())
-        .enumerate()
-        .for_each(|(i, (target, replicate))| {
-            let (best, follow_up) = maxima[i];
-            *target = if replicate[vector_index] == best {
-                follow_up
-            } else {
-                best
-            } - replicate[vector_index];
-        });
-}
-
-/// Select the largest two entries of a slice.
-fn column_max(column: &[f64]) -> (f64, f64) {
-    let mut best = f64::NEG_INFINITY;
-    let mut follow_up = f64::NEG_INFINITY;
-
-    for &likelihood in column {
-        if likelihood >= best {
-            follow_up = best;
-            best = likelihood;
-        } else if likelihood > follow_up {
-            follow_up = likelihood;
-        }
-    }
-
-    (best, follow_up)
-}
-
-/// Convert the replicate likelihoods into the format expected by [`BootstrapReplicates`].
-/// This includes:
-///  - Transposing the matrix of likelihoods
-///  - Moving the likelihoods toward zero, such that the Maximum Likelihood bootstrap replicate of
-///    each set of replicates has likelihood zero, and all others have the (positive) log-likelihood
-///    difference to the best one.
-///  - Sorting the replicate (delta-)likelihoods within each row (so per input sequence) in
-///    ascending order
-///
-/// The results are written into the provided `bootstrap_replicates` instance into the
-/// `scale_index`-th matrix.
-///
-/// # Parameters
-/// - `bootstrap_replicates` the [`BootstrapReplicates`] matrix set where the results are written to.
-/// - `replicate_likelihoods` the bootstrap replicates as generated by [`bootstrap`], meaning an
-///   array with `B` replicate sets, each containing one likelihood per input sequence.
-/// - `scale_index` the index of the scaling factor used for bootstrapping in the scaling factor
-///   array.
-///
-/// [`BootstrapReplicates`]: FullReplicates
-/// [`bootstrap`]: bootstrap
-pub fn normalize_replicates(
-    bootstrap_replicates: &mut FullReplicates,
-    replicate_likelihoods: &[Box<[f64]>],
-    scale_index: usize,
-) {
-    // Calculate the maximum likelihood for each bootstrap replicate. Technically the paper calls
-    // for calculating the maximum without the element that is being compared with, but since it
-    // is never important whether the statistic is zero or below zero, we can just use the maximum
-    // every time, accepting that the best input for the replicate gets likelihood zero
-    let boot_max: Box<[_]> = replicate_likelihoods
-        .iter()
-        .map(|replicate| column_max(replicate))
-        .collect();
-
-    // subtract the maximum from each replicate likelihood for each tree, such that all bootstrap
-    // replicates are distributed around 0
-    bootstrap_replicates
-        .get_bootstrap_vectors_mut(scale_index)
-        .enumerate()
-        .for_each(|(vector_index, vector)| {
-            normalize_replicate_vector(vector, replicate_likelihoods, &boot_max, vector_index);
-        });
-    bootstrap_replicates
-        .get_bootstrap_vectors_mut(scale_index)
-        .for_each(|vector| {
-            vector.sort_unstable_by(|a, b| a.total_cmp(b));
-        });
-}
-
-/// Convert the replicate likelihoods into the format expected by [`BootstrapReplicates`] in
-/// parallel.
-///
-/// For a full explanation refer to [`normalize_replicates`].
-///
-/// [`BootstrapReplicates`]: FullReplicates
-#[cfg(feature = "rayon")]
-pub fn par_normalize_replicates(
-    replicate_likelihoods: &[Box<[f64]>],
-    replicate_matrix: &mut FullReplicates,
-    scale_index: usize,
-) {
-    use rayon::prelude::*;
-
-    // for comments on this method see sequential version
-    let boot_max: Box<[_]> = replicate_likelihoods
-        .par_iter()
-        .map(|replicate| column_max(replicate))
-        .collect();
-    replicate_matrix
-        .get_bootstrap_vectors_mut(scale_index)
-        .enumerate()
-        .par_bridge()
-        .for_each(|(vector_index, vector)| {
-            normalize_replicate_vector(vector, replicate_likelihoods, &boot_max, vector_index);
-        });
-    replicate_matrix
-        .get_bootstrap_vectors_mut(scale_index)
-        .par_bridge()
-        .for_each(|vector| {
-            vector.sort_unstable_by(|a, b| a.total_cmp(b));
-        });
-}
-
 /// Convenience method to perform the multiscale BP-test.
 /// This method calls [`bootstrap`] and [`calc_bootstrap_proportion`] once for each scale in
 /// `bootstrap_scales`, generating a number of replicates as indicated by the corresponding value in
@@ -633,11 +294,11 @@ pub fn bp_test<R>(
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
     replication_counts: &[usize],
-) -> FullReplicates
+) -> ReplicateDeltas
 where
     R: Rng,
 {
-    let mut replicate_matrix = FullReplicates::new(
+    let mut replicate_matrix = ReplicateDeltas::new(
         bootstrap_scales.to_vec().into_boxed_slice(),
         replication_counts.to_vec().into_boxed_slice(),
         likelihoods.num_trees(),
@@ -649,7 +310,7 @@ where
         .enumerate()
     {
         let replicates = bootstrap(rng, likelihoods, num_replicates, bootstrap_scale);
-        normalize_replicates(&mut replicate_matrix, &replicates, scale_index);
+        compute_delta_table(&mut replicate_matrix, &replicates, scale_index);
     }
 
     replicate_matrix
@@ -680,13 +341,13 @@ pub fn par_bp_test<R>(
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
     replication_counts: &[usize],
-) -> FullReplicates
+) -> ReplicateDeltas
 where
     R: Rng + Clone + Send,
 {
     use crate::bootstrap::par_bootstrap;
 
-    let mut replicate_matrix = FullReplicates::new(
+    let mut replicate_matrix = ReplicateDeltas::new(
         bootstrap_scales.to_vec().into_boxed_slice(),
         replication_counts.to_vec().into_boxed_slice(),
         likelihoods.num_trees(),
@@ -701,7 +362,7 @@ where
         //  the used rng to guarantee the different scales arent generating the same prefix
         //  of their individual distribution
         let replicates = par_bootstrap(rng, likelihoods, num_replicates, bootstrap_scale);
-        par_normalize_replicates(&replicates, &mut replicate_matrix, scale_index);
+        par_compute_delta_table(&replicates, &mut replicate_matrix, scale_index);
     }
 
     replicate_matrix
@@ -728,15 +389,15 @@ mod tests {
 
         let mut rng = rng();
 
-        let v = generate_selection_vector(&mut rng, 100, 1.0);
+        let v = generate_weight_vector(&mut rng, 100, 1.0);
         assert_eq!(v.len(), 100);
         assert_eq!(v.iter().sum::<f64>(), 100.0);
 
-        let v = generate_selection_vector(&mut rng, 100, 2.0);
+        let v = generate_weight_vector(&mut rng, 100, 2.0);
         assert_eq!(v.len(), 100);
         assert_eq!(v.iter().sum::<f64>(), 200.0);
 
-        let v = generate_selection_vector(&mut rng, 200, 0.5);
+        let v = generate_weight_vector(&mut rng, 200, 0.5);
         assert_eq!(v.len(), 200);
         assert_eq!(v.iter().sum::<f64>(), 100.0);
     }
@@ -754,8 +415,8 @@ mod tests {
             vec![-2.0, -1.0, -0.5].into_boxed_slice(),
         ];
 
-        let mut replicate_matrix = FullReplicates::new(Box::new([1.0]), Box::new([4]), 3);
-        normalize_replicates(&mut replicate_matrix, replicates.as_slice(), 0);
+        let mut replicate_matrix = ReplicateDeltas::new(Box::new([1.0]), Box::new([4]), 3);
+        compute_delta_table(&mut replicate_matrix, replicates.as_slice(), 0);
 
         let mut iter = replicate_matrix.get_bootstrap_vectors(0);
 
