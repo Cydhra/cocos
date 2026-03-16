@@ -413,7 +413,7 @@ where
         //  the used rng to guarantee the different scales arent generating the same prefix
         //  of their individual distribution
         let replicates = par_bootstrap(rng, likelihoods, num_replicates, bootstrap_scale);
-        par_compute_delta_table(&replicates, &mut replicate_matrix, scale_index);
+        par_compute_delta_table(&mut replicate_matrix, &replicates, scale_index);
     }
 
     replicate_matrix

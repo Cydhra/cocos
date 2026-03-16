@@ -355,8 +355,8 @@ pub fn compute_delta_table(
 /// [`BootstrapReplicates`]: ReplicateDeltas
 #[cfg(feature = "rayon")]
 pub fn par_compute_delta_table(
-    replicate_likelihoods: &SingleScaleBootstrap,
     replicate_matrix: &mut ReplicateDeltas,
+    replicate_likelihoods: &SingleScaleBootstrap,
     scale_index: usize,
 ) {
     use rayon::prelude::*;
