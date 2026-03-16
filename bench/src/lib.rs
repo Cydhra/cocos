@@ -17,17 +17,17 @@ pub fn reject_hypotheses(
 
     for i in 0..num_trees {
         // pooled corrected standard deviation of the distributions
-        let standard_error_consel_squared = reference_variance[i] / num_samples as f64;
-        let standard_error_cocos_squared = testing_variance[i] / num_samples as f64;
+        let standard_error_reference_squared = reference_variance[i] / num_samples as f64;
+        let standard_error_testing_squared = testing_variance[i] / num_samples as f64;
         let standard_error_delta_squared =
-            standard_error_consel_squared + standard_error_cocos_squared;
+            standard_error_reference_squared + standard_error_testing_squared;
         let standard_error_delta =
-            (standard_error_consel_squared + standard_error_cocos_squared).sqrt();
+            (standard_error_reference_squared + standard_error_testing_squared).sqrt();
 
         let lower_bound_rejected;
         let upper_bound_rejected;
 
-        if standard_error_cocos_squared == 0.0 && standard_error_consel_squared == 0.0 {
+        if standard_error_testing_squared == 0.0 && standard_error_reference_squared == 0.0 {
             // if both variances are zero, the t-test collapses, however we don't have any uncertainty
             // and can just compare the means directly.
             lower_bound_rejected = testing_mean[i] >= reference_mean[i] - equivalence_margin;
@@ -42,8 +42,8 @@ pub fn reject_hypotheses(
             // simplified: https://en.wikipedia.org/wiki/Welch%27s_t-test#Calculations
             let pooled_degrees_of_freedom = individual_degrees_of_freedom
                 * (standard_error_delta_squared * standard_error_delta_squared)
-                / (standard_error_consel_squared * standard_error_consel_squared
-                    + standard_error_cocos_squared * standard_error_cocos_squared);
+                / (standard_error_reference_squared * standard_error_reference_squared
+                    + standard_error_testing_squared * standard_error_testing_squared);
 
             // calculate the test statistics as a confidence interval with radius of the accepted margin
             // reference: https://en.wikipedia.org/wiki/Equivalence_test#TOST_procedure
