@@ -120,8 +120,9 @@ fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     let mut cocos_mean = vec![0.0; num_trees];
     let mut cocos_variance = vec![0.0; num_trees];
 
-    // generate independent seeds for the threads
-    let mut seed_rng = rand::rng();
+    // generate independent seeds for the threads to ensure different runs. seeds are determinisitic
+    // though to avoid random test fluctuations.
+    let mut seed_rng = StdRng::from_seed([0u8; 32]);
     let seeds: Vec<_> = (0..num_samples).map(|_| seed_rng.random()).collect();
 
     let p_value_runs: Vec<_> = seeds
