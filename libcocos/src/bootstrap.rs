@@ -314,7 +314,7 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
                 .for_each(|(chunk_index, bootstrap_vec)| {
                     let offset = chunk_index * regular_chunk_len;
                     let trees = &bootstrap_vec.replicate(replicate);
-                    concatenated_likelihoods[..].copy_from_slice(trees);
+                    concatenated_likelihoods[offset..offset + trees.len()].copy_from_slice(trees);
                 });
         });
 
