@@ -280,12 +280,49 @@ fn compute_likelihood_deltas(
         });
 }
 
+fn compute_likelihood_deltas_scaled(
+    target: &mut [f64],
+    replicate_likelihoods: &SingleScaleBootstrap,
+    maxima: &[(f64, f64)],
+    mean: f64,
+    factor: f64,
+    vector_index: usize,
+) {
+    target
+        .iter_mut()
+        .zip(replicate_likelihoods.all_replicates())
+        .enumerate()
+        .for_each(|(i, (target, replicate))| {
+            let (best, follow_up) = maxima[i];
+            let scaled_lh = mean + factor * (replicate[vector_index] - mean);
+            *target = if scaled_lh == best { follow_up } else { best } - scaled_lh;
+        });
+}
+
 /// Select the largest two entries of a slice.
 fn column_max(column: &[f64]) -> (f64, f64) {
     let mut best = f64::NEG_INFINITY;
     let mut follow_up = f64::NEG_INFINITY;
 
     for &likelihood in column {
+        if likelihood >= best {
+            follow_up = best;
+            best = likelihood;
+        } else if likelihood > follow_up {
+            follow_up = likelihood;
+        }
+    }
+
+    (best, follow_up)
+}
+
+fn scaled_column_max(column: &[f64], means: &[f64], scale: f64) -> (f64, f64) {
+    let mut best = f64::NEG_INFINITY;
+    let mut follow_up = f64::NEG_INFINITY;
+
+    for (row, &likelihood) in column.iter().enumerate() {
+        let likelihood = means[row] + scale * (likelihood - means[row]);
+
         if likelihood >= best {
             follow_up = best;
             best = likelihood;
@@ -345,6 +382,63 @@ pub fn compute_delta_table(
         .for_each(|vector| {
             vector.sort_unstable_by(|a, b| a.total_cmp(b));
         });
+}
+
+pub fn compute_approximate_delta_table(
+    bootstrap_replicates: &mut ReplicateDeltas,
+    replicate_likelihoods: &SingleScaleBootstrap,
+    reference_scale: usize,
+) {
+    // calculate means
+    let mut means = vec![0.0; bootstrap_replicates.num_trees()];
+    replicate_likelihoods
+        .all_replicates()
+        .fold(&mut means, |acc, rep| {
+            acc.iter_mut().zip(rep).for_each(|(v, r)| *v += r);
+            acc
+        });
+    means
+        .iter_mut()
+        .for_each(|m| *m /= bootstrap_replicates.replication_counts[reference_scale] as f64);
+
+    // calculate scalars
+    let bootstrap_scale = bootstrap_replicates.scales[reference_scale];
+    let rescale_factors: Vec<_> = bootstrap_replicates
+        .scales
+        .iter()
+        .map(|scale| (bootstrap_scale / scale).sqrt())
+        .collect();
+
+    for scale_index in 0..bootstrap_replicates.scales.len() {
+        if scale_index == reference_scale {
+            compute_delta_table(bootstrap_replicates, replicate_likelihoods, scale_index)
+        } else {
+            let boot_max: Box<[_]> = replicate_likelihoods
+                .all_replicates()
+                .map(|replicate| scaled_column_max(replicate, &means, rescale_factors[scale_index]))
+                .collect();
+
+            bootstrap_replicates
+                .get_bootstrap_vectors_mut(scale_index)
+                .enumerate()
+                .for_each(|(vector_index, vector)| {
+                    compute_likelihood_deltas_scaled(
+                        vector,
+                        replicate_likelihoods,
+                        &boot_max,
+                        means[vector_index],
+                        rescale_factors[scale_index],
+                        vector_index,
+                    );
+                });
+
+            bootstrap_replicates
+                .get_bootstrap_vectors_mut(scale_index)
+                .for_each(|vector| {
+                    vector.sort_unstable_by(|a, b| a.total_cmp(b));
+                });
+        }
+    }
 }
 
 /// Convert the replicate likelihoods into the format expected by [`BootstrapReplicates`] in
