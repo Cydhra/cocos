@@ -33,7 +33,7 @@
 //! [bootstrap scales]: DEFAULT_FACTORS
 //! [replicate counts]: DEFAULT_REPLICATES
 
-use crate::delta::{ReplicateDeltas, compute_delta_table, par_compute_delta_table};
+use crate::delta::{ReplicateDeltas, compute_delta_table};
 use crate::vectors::dot_prod;
 use crate::{ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods};
 use rand::Rng;
@@ -396,6 +396,7 @@ where
     R: Rng + Clone + Send,
 {
     use crate::bootstrap::par_bootstrap;
+    use crate::delta::par_compute_delta_table;
 
     let mut replicate_matrix = ReplicateDeltas::new(
         bootstrap_scales.to_vec().into_boxed_slice(),
