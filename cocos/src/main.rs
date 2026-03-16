@@ -223,11 +223,11 @@ fn main() {
 
     log!("Finished Bootstrapping in {:?}.", start.elapsed());
 
-    let au_values = if bootstrap_replicates.num_trees() >= 1000 {
+    let au_values = if bootstrap_replicates.num_trees() >= 1000 && actual_threads != 1 {
         log!("Estimating necessary parameters in parallel with {actual_threads} threads...");
         par_get_au_values(&bootstrap_replicates)
     } else {
-        log!("Not enough trees. Estimating necessary parameters sequentially...");
+        log!("Estimating necessary parameters sequentially...");
         get_au_values(&bootstrap_replicates)
     };
 
