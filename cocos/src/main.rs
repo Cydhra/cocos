@@ -5,7 +5,7 @@ use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES, bp_test, par_bp_t
 use libcocos::delta::BootstrapDeltaTable;
 use rand::{RngCore, SeedableRng, rng};
 use rand_chacha::ChaCha8Rng;
-use rayon::{ThreadPoolBuilder, current_num_threads};
+use rayon::ThreadPoolBuilder;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write, stdin, stdout};
@@ -176,7 +176,7 @@ fn main() {
     let mut rng = ChaCha8Rng::seed_from_u64(seed);
     log!("Random seed: {}", seed);
 
-    if args.threads == 0 {
+    let actual_threads = if args.threads == 0 {
         // use physical CPU count because the code is almost exclusively using the AVX unit, which
         // exists at most once per physical core.
         let threads = num_cpus::get_physical();
@@ -185,32 +185,24 @@ fn main() {
             threads
         );
 
-        ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build_global()
-            .unwrap_or_else(|e| {
-                log!("Failed to build thread pool: {}", e);
-                exit(1);
-            });
+        threads
     } else if args.threads != 1 {
-        ThreadPoolBuilder::new()
-            .num_threads(args.threads)
-            .build_global()
-            .unwrap_or_else(|e| {
-                log!("Failed to build thread pool: {}", e);
-                exit(1);
-            });
-    }
+        args.threads
+    } else {
+        1
+    };
+
+    log!("Using {actual_threads} threads for the AU test.");
 
     log!(
         "Bootstrapping {} trees at {} scales with {} threads.",
         likelihoods.num_trees(),
         DEFAULT_FACTORS.len(),
-        current_num_threads(),
+        actual_threads,
     );
 
     let start = Instant::now();
-    let bootstrap_replicates = if args.threads == 1 {
+    let bootstrap_replicates = if actual_threads == 1 {
         bp_test(
             &mut rng,
             &likelihoods,
@@ -218,12 +210,21 @@ fn main() {
             &DEFAULT_REPLICATES,
         )
     } else {
+        ThreadPoolBuilder::new()
+            .num_threads(actual_threads)
+            .build_global()
+            .unwrap_or_else(|e| {
+                log!("Failed to build thread pool: {}", e);
+                exit(1);
+            });
+
         par_bp_test(&rng, &likelihoods, &DEFAULT_FACTORS, &DEFAULT_REPLICATES)
     };
+
     log!("Finished Bootstrapping in {:?}.", start.elapsed());
 
     let au_values = if bootstrap_replicates.num_trees() >= 1000 {
-        log!("Estimating necessary parameters in parallel...");
+        log!("Estimating necessary parameters in parallel with {actual_threads} threads...");
         par_get_au_values(&bootstrap_replicates)
     } else {
         log!("Not enough trees. Estimating necessary parameters sequentially...");
