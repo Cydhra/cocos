@@ -362,11 +362,14 @@ pub fn par_compute_delta_table(
     use rayon::prelude::*;
 
     // for comments on this method see sequential version
+
+    // this method is run sequentially because it is very low effort and a par_bridge does not
+    // preserve ordering, which would necessitate another sequential sorting step otherwise
     let boot_max: Box<[_]> = replicate_likelihoods
         .all_replicates()
-        .par_bridge()
         .map(|replicate| column_max(replicate))
         .collect();
+
     replicate_matrix
         .get_bootstrap_vectors_mut(scale_index)
         .enumerate()
