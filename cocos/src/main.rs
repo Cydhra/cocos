@@ -1,7 +1,10 @@
 use clap::*;
 use libcocos::au::error::MathError;
 use libcocos::au::{get_au_values, par_get_au_values};
-use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES, bp_test, par_bp_test};
+use libcocos::bootstrap::{
+    DEFAULT_FACTORS, DEFAULT_REPLICATES, approx_multiscale_bootstrap, multiscale_bootstrap,
+    par_approx_multiscale_bootstrap, par_multiscale_bootstrap,
+};
 use libcocos::delta::BootstrapDeltaTable;
 use rand::{RngCore, SeedableRng, rng};
 use rand_chacha::ChaCha8Rng;
@@ -49,6 +52,11 @@ struct CliArgs {
     /// is chosen.
     #[clap(long, short)]
     seed: Option<u64>,
+
+    /// If set, the bootstrap is replaced with an approximate scheme that reduces the necessary
+    /// work by a factor of 10.
+    #[clap(long = "approx", short)]
+    approximate: bool,
 }
 
 #[derive(ValueEnum, Clone, Debug, PartialEq)]
@@ -201,15 +209,8 @@ fn main() {
         actual_threads,
     );
 
-    let start = Instant::now();
-    let bootstrap_replicates = if actual_threads == 1 {
-        bp_test(
-            &mut rng,
-            &likelihoods,
-            &DEFAULT_FACTORS,
-            &DEFAULT_REPLICATES,
-        )
-    } else {
+    // configure threadpool if necessary
+    if actual_threads != 1 {
         ThreadPoolBuilder::new()
             .num_threads(actual_threads)
             .build_global()
@@ -217,8 +218,40 @@ fn main() {
                 log!("Failed to build thread pool: {}", e);
                 exit(1);
             });
+    }
 
-        par_bp_test(&rng, &likelihoods, &DEFAULT_FACTORS, &DEFAULT_REPLICATES)
+    let start = Instant::now();
+    let bootstrap_replicates = if args.approximate {
+        const DEFAULT_SCALE: usize = 5;
+
+        if actual_threads == 1 {
+            approx_multiscale_bootstrap(
+                &mut rng,
+                &likelihoods,
+                &DEFAULT_FACTORS,
+                DEFAULT_SCALE,
+                DEFAULT_REPLICATES[DEFAULT_SCALE],
+            )
+        } else {
+            par_approx_multiscale_bootstrap(
+                &mut rng,
+                &likelihoods,
+                &DEFAULT_FACTORS,
+                DEFAULT_SCALE,
+                DEFAULT_REPLICATES[DEFAULT_SCALE],
+            )
+        }
+    } else {
+        if actual_threads == 1 {
+            multiscale_bootstrap(
+                &mut rng,
+                &likelihoods,
+                &DEFAULT_FACTORS,
+                &DEFAULT_REPLICATES,
+            )
+        } else {
+            par_multiscale_bootstrap(&rng, &likelihoods, &DEFAULT_FACTORS, &DEFAULT_REPLICATES)
+        }
     };
 
     log!("Finished Bootstrapping in {:?}.", start.elapsed());
