@@ -9,7 +9,9 @@
 use crate::common::{read_consel_results, read_slh};
 use libcocos::au::error::MathError;
 use libcocos::au::get_au_values;
-use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES, bootstrap};
+use libcocos::bootstrap::{
+    DEFAULT_FACTORS, DEFAULT_REPLICATES, approx_multiscale_bootstrap, bootstrap,
+};
 use libcocos::delta::{ReplicateDeltas, compute_approximate_delta_table};
 use libcocos::{SiteLikelihoodTable, au_test};
 use rand::rngs::StdRng;
@@ -143,7 +145,15 @@ fn compare_with_consel_approx(#[files("data/*.siteLH")] fixture: PathBuf) {
     let seeds: Vec<_> = (0..num_samples).map(|_| seed_rng.random()).collect();
 
     // approximate runs
-    let approx_runs: Vec<_> = compute_approximate_pval(&per_site_lnl, &seeds);
+    let approx_runs: Vec<_> = seeds
+        .into_iter()
+        .map(|seed| {
+            let mut rng = StdRng::from_seed(seed);
+            let replicate_matrix =
+                approx_multiscale_bootstrap(&mut rng, &per_site_lnl, &DEFAULT_FACTORS, 5, 10_000);
+            get_au_values(&replicate_matrix)
+        })
+        .collect();
 
     // calculate parallel mean and variance
     let approx_statistics = common::calculate_statistics(&approx_runs, num_trees);
