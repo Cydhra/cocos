@@ -431,6 +431,7 @@ where
     replicate_matrix
 }
 
+#[cfg(feature = "rayon")]
 pub fn par_approx_multiscale_bootstrap<R>(
     rng: &mut R,
     likelihoods: &SiteLikelihoodTable,
