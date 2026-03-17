@@ -5,8 +5,8 @@
 //! Consel's output is provided in N CSV files of pre-computed consel runs with random seeds,
 //! which will be matched with N cocos runs.
 
-use bench::reject_hypotheses;
-use csv::Trim;
+use crate::common::read_slh;
+use crate::common::{TreeStatistics, read_consel_results};
 use libcocos::au::error::MathError;
 use libcocos::au_test;
 use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES};
@@ -14,111 +14,20 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use rayon::prelude::*;
 use rstest::*;
-use std::fs;
-use std::fs::File;
-use std::io::BufReader;
 use std::path::PathBuf;
 
-/// Margin accepted for the difference in p-values between cocos and consel.
-/// We accept 2% (additive) difference of p-values.
-/// This is expected to not drastically alter the amount of rejected trees between the tools
-/// (especially since we see lower variance for low p-values).
-const EQUIVALENCE_MARGIN: f64 = 0.02;
-
-/// Confidence value for the t tests.
-/// Note that this means that the null-hypothesis is rejected incorrectly with probability 1%,
-/// but this doesn't mean that failing to reject it has an equally high probability.
-/// Failing to reject the hypothesis should always be treated as a problem with the algorithm.
-const CONFIDENCE: f64 = 0.99;
-
-/// Consel output is saved to a CSV file with these five values per record. The records in the file
-/// are sorted by rank, not by item.
-#[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
-struct ConselRecord {
-    rank: usize,
-    item: usize,
-    obs: f64,
-    au: f64,
-    np: f64,
-}
+mod common;
 
 #[rstest]
 fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
-    // get environment
-    let mut file_name = site_likelihoods
-        .file_name()
-        .expect("test called with invalid fixture")
-        .to_str()
-        .expect("file name is not representable");
-
-    // find directory with consel output
-    if site_likelihoods.extension().is_some() {
-        let suffix = format!(
-            ".{}",
-            site_likelihoods.extension().unwrap().to_str().unwrap()
-        );
-        file_name = file_name.strip_suffix(&suffix).unwrap();
-    }
-
-    // find consel output
-    let consel_dir = site_likelihoods
-        .parent()
-        .expect("fixture cannot be located")
-        .join(file_name);
-
-    // read site-likelihoods
-    let per_site_lnl = cocos_parse::parse_puzzle(BufReader::new(
-        File::open(&site_likelihoods).expect("cannot read fixture"),
-    ))
-    .expect("cannot parse siteLH file");
+    let per_site_lnl = read_slh(&site_likelihoods);
     let num_trees = per_site_lnl.num_trees();
-
-    // read in consel outputs
-    let mut consel_mean = vec![0.0; num_trees];
-    let mut consel_variance = vec![0.0; num_trees];
-
-    // find consel samples to determine the number of samples to take from cocos
-    let consel_samples: Vec<_> = fs::read_dir(consel_dir)
-        .expect("cannot list consel output directory")
-        .filter(|f| {
-            f.as_ref()
-                .expect("cannot list consel output directory content")
-                .file_name()
-                .to_str()
-                .expect("cannot parse OS string")
-                .ends_with("csv")
-        })
-        .collect();
-    let num_samples = consel_samples.len();
-
-    for result_file in consel_samples {
-        let result_file = result_file.expect("cannot list consel output").path();
-        let mut reader = csv::ReaderBuilder::new()
-            .has_headers(true)
-            .trim(Trim::Fields)
-            .from_reader(File::open(&result_file).expect("cannot open consel output"));
-
-        // read in the results and store them in the samples
-        for record in reader.deserialize::<ConselRecord>() {
-            let record = record.expect("malformed consel output");
-            consel_mean[record.item - 1] += record.au;
-            consel_variance[record.item - 1] += record.au * record.au;
-        }
-    }
-
-    // calculate consel mean and variance
-    for i in 0..num_trees {
-        consel_variance[i] -= consel_mean[i] * consel_mean[i] / num_samples as f64;
-        consel_variance[i] /= (num_samples - 1) as f64;
-
-        consel_mean[i] /= num_samples as f64;
-    }
+    let consel_statistics = read_consel_results(&site_likelihoods, num_trees);
+    let num_samples = consel_statistics.get_num_samples();
 
     // run cocos in parallel (we assume test execution is sequential so we can leverage threads.
     // We also run AU test sequentially, because we probably have more runs than CPUs).
-    let mut cocos_mean = vec![0.0; num_trees];
-    let mut cocos_variance = vec![0.0; num_trees];
+    let mut cocos_statistics = TreeStatistics::new(num_trees);
 
     // generate independent seeds for the threads to ensure different runs. seeds are determinisitic
     // though to avoid random test fluctuations.
@@ -148,30 +57,18 @@ fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
                     MathError::ConvergenceFailed { p_value } => *p_value,
                 },
             };
-            cocos_mean[item] += au;
-            cocos_variance[item] += au * au;
+            cocos_statistics.add_sample(item, au);
         }
     });
 
-    // calculate cocos mean and variance
-    for i in 0..num_trees {
-        // variance with Bessel's correction
-        cocos_variance[i] -= cocos_mean[i] * cocos_mean[i] / num_samples as f64;
-        cocos_variance[i] /= (num_samples - 1) as f64;
-
-        // calculate mean and variance
-        cocos_mean[i] /= num_samples as f64;
-    }
+    cocos_statistics.finalize();
 
     // collected hypotheses that cannot be rejected here for debug output
-    reject_hypotheses(
-        num_samples,
-        EQUIVALENCE_MARGIN,
-        CONFIDENCE,
-        &consel_mean,
-        &consel_variance,
-        &cocos_mean,
-        &cocos_variance,
+    common::reject_hypotheses(
+        common::EQUIVALENCE_MARGIN,
+        common::CONFIDENCE,
+        &consel_statistics,
+        &cocos_statistics,
         "consel",
         "cocos",
     );
