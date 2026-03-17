@@ -22,7 +22,7 @@
 
 use crate::au::error::MathError;
 use crate::au::get_au_values;
-use crate::bootstrap::bp_test;
+use crate::bootstrap::multiscale_bootstrap;
 use rand::Rng;
 use std::ops::{Index, IndexMut};
 
@@ -139,7 +139,8 @@ pub fn au_test<R>(
 where
     R: Rng,
 {
-    let bootstrap_replicates = bp_test(rng, likelihoods, bootstrap_scales, replication_counts);
+    let bootstrap_replicates =
+        multiscale_bootstrap(rng, likelihoods, bootstrap_scales, replication_counts);
     get_au_values(&bootstrap_replicates)
 }
 
@@ -159,8 +160,9 @@ where
     R: Rng + Clone + Send,
 {
     use crate::au::par_get_au_values;
-    use crate::bootstrap::par_bp_test;
+    use crate::bootstrap::par_multiscale_bootstrap;
 
-    let bootstrap_replicates = par_bp_test(rng, likelihoods, bootstrap_scales, replication_counts);
+    let bootstrap_replicates =
+        par_multiscale_bootstrap(rng, likelihoods, bootstrap_scales, replication_counts);
     par_get_au_values(&bootstrap_replicates)
 }

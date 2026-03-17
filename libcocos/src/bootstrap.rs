@@ -33,7 +33,7 @@
 //! [bootstrap scales]: DEFAULT_FACTORS
 //! [replicate counts]: DEFAULT_REPLICATES
 
-use crate::delta::{ReplicateDeltas, compute_delta_table};
+use crate::delta::{ReplicateDeltas, compute_approximate_delta_table, compute_delta_table};
 use crate::vectors::dot_prod;
 use crate::{ResamplingWeights, SiteLikelihoodTable, SiteLikelihoods};
 use rand::Rng;
@@ -321,8 +321,8 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
     results
 }
 
-/// Convenience method to perform the multiscale BP-test.
-/// This method calls [`bootstrap`] and [`calc_bootstrap_proportion`] once for each scale in
+/// Convenience method to perform the multiscale bootstrap including calculation of the likelihood deltas.
+/// This method calls [`bootstrap`] and [`compute_delta_table`] once for each scale in
 /// `bootstrap_scales`, generating a number of replicates as indicated by the corresponding value in
 /// `bootstrap_replicates`. All results are stored in an instance of [`todo`], which is returned.
 ///
@@ -338,8 +338,8 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
 /// individually.
 ///
 /// [`bootstrap`]: bootstrap
-/// [`calc_bootstrap_proportion`]: calc_bootstrap_proportion
-pub fn bp_test<R>(
+/// [`compute_delta_table`]: compute_delta_table
+pub fn multiscale_bootstrap<R>(
     rng: &mut R,
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
@@ -366,27 +366,8 @@ where
     replicate_matrix
 }
 
-/// Convenience method to perform the multiscale BP-test in parallel.
-/// This method calls [`par_bootstrap`] and [`par_calc_bootstrap_proportion`] once for each scale in
-/// `bootstrap_scales`, generating a number of replicates as indicated by the corresponding value in
-/// `bootstrap_replicates`. All results are stored in an instance of [`BpTable`], which is returned.
-///
-/// # Parameters
-/// - `rng` the random number generator to use during the BP test
-/// - `likelihoods` a matrix of `N` input sequences of log-likelihoods that are being resampled
-///   by the bootstrap resampling
-/// - `bootstrap_scales` the scaling factors of the multiscale bootstrap procedure.
-/// - `replication_counts` how many replicates to generate for each corresponding scaling factor
-///
-/// # Return
-/// The [`BpTable`] containing the bootstrap proportions of all input sequences for each scale
-/// individually.
-///
-/// [`par_bootstrap`]: par_bootstrap
-/// [`par_calc_bootstrap_proportion`]: par_calc_bootstrap_proportion
-/// [`BpTable`]: todo
 #[cfg(feature = "rayon")]
-pub fn par_bp_test<R>(
+pub fn par_multiscale_bootstrap<R>(
     rng: &R,
     likelihoods: &SiteLikelihoodTable,
     bootstrap_scales: &[f64],
@@ -416,6 +397,60 @@ where
         par_compute_delta_table(&mut replicate_matrix, &replicates, scale_index);
     }
 
+    replicate_matrix
+}
+
+pub fn approx_multiscale_bootstrap<R>(
+    rng: &mut R,
+    likelihoods: &SiteLikelihoodTable,
+    bootstrap_scales: &[f64],
+    reference_scale: usize,
+    replication_count: usize,
+) -> ReplicateDeltas
+where
+    R: Rng + Clone + Send,
+{
+    let mut replicate_matrix = ReplicateDeltas::new(
+        bootstrap_scales.to_vec().into_boxed_slice(),
+        vec![replication_count; bootstrap_scales.len()].into_boxed_slice(),
+        likelihoods.num_trees(),
+    );
+
+    let replicates = bootstrap(
+        rng,
+        likelihoods,
+        replication_count,
+        bootstrap_scales[reference_scale],
+    );
+    compute_approximate_delta_table(&mut replicate_matrix, &replicates, reference_scale);
+    replicate_matrix
+}
+
+pub fn par_approx_multiscale_bootstrap<R>(
+    rng: &mut R,
+    likelihoods: &SiteLikelihoodTable,
+    bootstrap_scales: &[f64],
+    reference_scale: usize,
+    replication_count: usize,
+) -> ReplicateDeltas
+where
+    R: Rng + Clone + Send,
+{
+    let mut replicate_matrix = ReplicateDeltas::new(
+        bootstrap_scales.to_vec().into_boxed_slice(),
+        vec![replication_count; bootstrap_scales.len()].into_boxed_slice(),
+        likelihoods.num_trees(),
+    );
+
+    let replicates = par_bootstrap(
+        rng,
+        likelihoods,
+        replication_count,
+        bootstrap_scales[reference_scale],
+    );
+
+    // TODO make parallel version of this
+    compute_approximate_delta_table(&mut replicate_matrix, &replicates, reference_scale);
     replicate_matrix
 }
 
