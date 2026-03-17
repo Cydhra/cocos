@@ -97,6 +97,10 @@ function Get-CatpvPath {
  .PARAMETER format
  File format to use for the log-likelihoods file. Defaults to "puzzle", which is the format used by tree-puzzle and
  raxml-ng. Further supports "molphy", "paml", "paup", and "pyhml".
+
+ .PARAMETER Rescaling
+ If set, the rescaling approximation is used, which limits the bootstraping to single-scale bootstrap at scale
+ factor 1.
 #>
 function Invoke-Makermt {
     param(
@@ -108,13 +112,21 @@ function Invoke-Makermt {
 
         [ValidateSet("molphy", "paml", "paup", "puzzle", "phyml", IgnoreCase = $true)]
         [Parameter(Mandatory = $false)]
-        [string] $Format = "puzzle"
+        [string] $Format = "puzzle",
+
+        [switch] $Rescaling
     )
 
     $LinuxSiteLh = ConvertTo-LinuxPath -Path $Sitelh
     $LinuxOutput = ConvertTo-LinuxPath -Path $Output
 
-    Invoke-OnLinux -Path (Get-MakermtPath) "--$Format" $LinuxSiteLh $LinuxOutput
+    $RemainingArgs = @()
+
+    if ($Rescaling) {
+        $RemainingArgs += "-f"
+    }
+
+    Invoke-OnLinux -Path (Get-MakermtPath) "--$Format" $LinuxSiteLh $LinuxOutput @RemainingArgs
 }
 
 <#
@@ -131,6 +143,9 @@ function Invoke-Makermt {
  .PARAMETER output
  Output file name pattern. Makermt will generate two output files, which will use the provided output pattern and
  the respective file ending. Do not append a file ending to the output pattern.
+
+  .PARAMETER Rescaling
+ If set, the rescaling approximation is used, which extrapolates multiscale bootstrap results from a single bootstrap run.
 #>
 function Invoke-Consel {
     param(
@@ -138,13 +153,21 @@ function Invoke-Consel {
         [string] $Rmt,
 
         [Parameter(Mandatory = $true)]
-        [string] $Output
+        [string] $Output,
+
+        [switch] $Rescaling
     )
 
     $LinuxRmt = ConvertTo-LinuxPath -Path $Rmt
     $LinuxOutput = ConvertTo-LinuxPath -Path $Output
 
-    Invoke-OnLinux -Path (Get-ConselPath) $LinuxRmt $LinuxOutput "--no_sort" "--no_bp" "--no_pp" "--no_sh"
+    $RemainingArgs = @()
+
+    if ($Rescaling) {
+        $RemainingArgs += "-f"
+    }
+
+    Invoke-OnLinux -Path (Get-ConselPath) $LinuxRmt $LinuxOutput "--no_sort" "--no_bp" "--no_pp" "--no_sh" @RemainingArgs
 }
 
 <#

@@ -20,13 +20,20 @@ param (
     [string] $SiteLH,
 
     [Parameter(Mandatory = $false)]
-    [int] $Samples = 50
+    [int] $Samples = 50,
+
+    [switch] $Rescaling
 )
 
 Import-Module $PSScriptRoot/consel
 
 $DataDir = Split-Path -Parent $SiteLH
 $DirectoryName = Split-Path -LeafBase $SiteLH
+
+if ($Rescaling) {
+    $DirectoryName += "_approx"
+}
+
 $DirectoryPath = [System.IO.Path]::Combine($DataDir, $DirectoryName)
 
 if (-not (Test-Path $DirectoryPath)) {
@@ -38,8 +45,13 @@ Write-Host "Generating Run 0 to $($Samples - 1)..."
     $Prefix = [System.IO.Path]::Combine($DirectoryPath, "run$_")
     if (-not (Test-Path "$Prefix.csv")) {
         # Run consel
-        Invoke-Makermt -Sitelh $SiteLH -Output $Prefix
-        Invoke-Consel -Rmt "$Prefix.rmt" -Output $Prefix
+        if ($Rescaling) {
+            Invoke-Makermt -Sitelh $SiteLH -Output $Prefix -Rescaling
+            Invoke-Consel -Rmt "$Prefix.rmt" -Output $Prefix -Rescaling
+        } else {
+            Invoke-Makermt -Sitelh $SiteLH -Output $Prefix
+            Invoke-Consel -Rmt "$Prefix.rmt" -Output $Prefix
+        }
 
         # Convert to CSV file
         Import-Pv "$Prefix.pv" | Export-Csv "$Prefix.csv" -UseQuotes Always -NoTypeInformation
