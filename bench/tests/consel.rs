@@ -22,7 +22,7 @@ mod common;
 fn compare_with_consel(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     let per_site_lnl = read_slh(&site_likelihoods);
     let num_trees = per_site_lnl.num_trees();
-    let consel_statistics = read_consel_results(&site_likelihoods, num_trees);
+    let consel_statistics = read_consel_results(&site_likelihoods, num_trees, false);
     let num_samples = consel_statistics.get_num_samples();
 
     // run cocos in parallel (we assume test execution is sequential so we can leverage threads.

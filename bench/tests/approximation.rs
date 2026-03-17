@@ -1,17 +1,19 @@
 //! A test case which runs the available data files against libcocos and tests whether
-//! the full bootstrap outputs and the approximate bootstrap outputs generate the same p-values.
-//! It does so by doing two one-sided welch's t-tests that attempt to reject the hypothesis that the
-//! mean of the approximated outputs is outside the equivalence margin of the canonical outputs.
-//! The tests do use the same seeds for canonical and approximate outputs.
-//! However, we do not guarantee equal outputs at the moment,
-//! so we use two t-tests to compare results.
+//! the full bootstrap outputs and the approximate bootstrap outputs of the rescaling approximation
+//! generate the same p-values.
+//! A second test compares the approximate cocos outputs against the approximate consel outputs.
+//! Both test cases are expected to fail and are thus ignored by default.
+//! This test case exists to test how much worse different approximation schemes are.
+//! The approximation scheme is implemented in [`compute_approximate_pval`].
 
+use crate::common::{read_consel_results, read_slh};
+use libcocos::au::error::MathError;
 use libcocos::au::get_au_values;
-use libcocos::au_test;
 use libcocos::bootstrap::{DEFAULT_FACTORS, DEFAULT_REPLICATES, bootstrap};
 use libcocos::delta::{ReplicateDeltas, compute_approximate_delta_table};
+use libcocos::{SiteLikelihoodTable, au_test};
 use rand::rngs::StdRng;
-use rand::{Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rng};
 use rayon::ThreadPoolBuilder;
 use rayon::prelude::*;
 use rstest::*;
@@ -25,9 +27,46 @@ const NUM_SAMPLES: usize = 50;
 
 const NUM_REPLICATES: usize = 10_000;
 
-const SAMPLED_FACTOR: usize = 5;
-
 mod common;
+
+/// Compute p-values using the approximation of consel or a variant thereof.
+fn compute_approximate_pval(
+    per_site_lnl: &SiteLikelihoodTable,
+    seeds: &[[u8; 32]],
+) -> Vec<Box<[Result<f64, MathError>]>> {
+    seeds
+        .into_iter()
+        .map(|seed| {
+            let mut rng = StdRng::from_seed(*seed);
+
+            let mut replicate_matrix = ReplicateDeltas::new(
+                DEFAULT_FACTORS.to_vec().into_boxed_slice(),
+                vec![NUM_REPLICATES; DEFAULT_FACTORS.len()].into_boxed_slice(),
+                per_site_lnl.num_trees(),
+            );
+
+            let bootstrap_replicates =
+                bootstrap(&mut rng, &per_site_lnl, NUM_REPLICATES, DEFAULT_FACTORS[5]);
+            compute_approximate_delta_table(
+                &mut replicate_matrix,
+                &bootstrap_replicates,
+                5,
+                &(0..5).collect::<Vec<_>>(),
+            );
+
+            let bootstrap_replicates =
+                bootstrap(&mut rng, &per_site_lnl, NUM_REPLICATES, DEFAULT_FACTORS[9]);
+            compute_approximate_delta_table(
+                &mut replicate_matrix,
+                &bootstrap_replicates,
+                9,
+                &(5..10).collect::<Vec<_>>(),
+            );
+
+            get_au_values(&replicate_matrix)
+        })
+        .collect()
+}
 
 #[rstest]
 #[ignore] // this test is expected to fail, since the approximation cannot be as good as true multiscale
@@ -71,32 +110,7 @@ fn compare_with_canonical(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
     let canonical_statistics = common::calculate_statistics(&canonical_runs, num_trees);
 
     // approximate runs
-    let approx_runs: Vec<_> = seeds
-        .into_iter()
-        .map(|seed| {
-            let mut rng = StdRng::from_seed(seed);
-
-            let mut replicate_matrix = ReplicateDeltas::new(
-                DEFAULT_FACTORS.to_vec().into_boxed_slice(),
-                vec![NUM_REPLICATES; DEFAULT_FACTORS.len()].into_boxed_slice(),
-                per_site_lnl.num_trees(),
-            );
-
-            let bootstrap_replicates = bootstrap(
-                &mut rng,
-                &per_site_lnl,
-                NUM_REPLICATES,
-                DEFAULT_FACTORS[SAMPLED_FACTOR],
-            );
-            compute_approximate_delta_table(
-                &mut replicate_matrix,
-                &bootstrap_replicates,
-                SAMPLED_FACTOR,
-            );
-
-            get_au_values(&replicate_matrix)
-        })
-        .collect();
+    let approx_runs: Vec<_> = compute_approximate_pval(&per_site_lnl, &seeds);
 
     // calculate parallel mean and variance
     let approx_statistics = common::calculate_statistics(&approx_runs, num_trees);
@@ -109,5 +123,38 @@ fn compare_with_canonical(#[files("data/*.siteLH")] site_likelihoods: PathBuf) {
         &approx_statistics,
         "canonical",
         "approximate",
+    );
+}
+
+// this test is expected to fail, since the p-values are not necessarily normally distributed
+// and thus the t-test cannot compare the results. This is expected and true for both consel
+// and cocos.
+#[rstest]
+#[ignore]
+fn compare_with_consel_approx(#[files("data/*.siteLH")] fixture: PathBuf) {
+    let per_site_lnl = read_slh(&fixture);
+    let num_trees = per_site_lnl.num_trees();
+    let consel_statistics = read_consel_results(&fixture, num_trees, true);
+    let num_samples = consel_statistics.get_num_samples();
+
+    // generate independent seeds for the threads to ensure different runs. seeds are determinisitic
+    // though to avoid random test fluctuations.
+    let mut seed_rng = rng();
+    let seeds: Vec<_> = (0..num_samples).map(|_| seed_rng.random()).collect();
+
+    // approximate runs
+    let approx_runs: Vec<_> = compute_approximate_pval(&per_site_lnl, &seeds);
+
+    // calculate parallel mean and variance
+    let approx_statistics = common::calculate_statistics(&approx_runs, num_trees);
+
+    // collected hypotheses that cannot be rejected here for debug output
+    common::reject_hypotheses(
+        common::EQUIVALENCE_MARGIN,
+        common::CONFIDENCE,
+        &consel_statistics,
+        &approx_statistics,
+        "consel (approx)",
+        "cocos (approx)",
     );
 }

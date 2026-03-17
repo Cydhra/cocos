@@ -1,4 +1,4 @@
-#[allow(dead_code)]
+#![allow(dead_code)]
 use csv::Trim;
 use libcocos::SiteLikelihoodTable;
 use std::fs;
@@ -41,7 +41,7 @@ struct ConselRecord {
 
 /// Read in the consel results provided in the data/ directory of this repository, in a subfolder
 /// named after the fixture.
-pub fn read_consel_results(fixture: &PathBuf, num_trees: usize) -> TreeStatistics {
+pub fn read_consel_results(fixture: &PathBuf, num_trees: usize, approx: bool) -> TreeStatistics {
     // find consel output
     let mut file_name = fixture
         .file_name()
@@ -56,7 +56,11 @@ pub fn read_consel_results(fixture: &PathBuf, num_trees: usize) -> TreeStatistic
     let consel_dir = fixture
         .parent()
         .expect("fixture cannot be located")
-        .join(file_name);
+        .join(if approx {
+            file_name.to_owned() + "_approx"
+        } else {
+            file_name.to_owned()
+        });
 
     // read in consel outputs
     let mut consel_statistics = TreeStatistics::new(num_trees);
