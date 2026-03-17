@@ -388,6 +388,7 @@ pub fn compute_approximate_delta_table(
     bootstrap_replicates: &mut ReplicateDeltas,
     replicate_likelihoods: &SingleScaleBootstrap,
     reference_scale: usize,
+    target_scales: &[usize],
 ) {
     // calculate means
     let mut means = vec![0.0; bootstrap_replicates.num_trees()];
@@ -409,7 +410,7 @@ pub fn compute_approximate_delta_table(
         .map(|scale| (bootstrap_scale / scale).sqrt())
         .collect();
 
-    for scale_index in 0..bootstrap_replicates.scales.len() {
+    for &scale_index in target_scales {
         if scale_index == reference_scale {
             compute_delta_table(bootstrap_replicates, replicate_likelihoods, scale_index)
         } else {

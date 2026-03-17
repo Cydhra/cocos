@@ -422,7 +422,12 @@ where
         replication_count,
         bootstrap_scales[reference_scale],
     );
-    compute_approximate_delta_table(&mut replicate_matrix, &replicates, reference_scale);
+    compute_approximate_delta_table(
+        &mut replicate_matrix,
+        &replicates,
+        reference_scale,
+        &(0..bootstrap_scales.len()).collect::<Vec<_>>(),
+    );
     replicate_matrix
 }
 
@@ -450,7 +455,12 @@ where
     );
 
     // TODO make parallel version of this
-    compute_approximate_delta_table(&mut replicate_matrix, &replicates, reference_scale);
+    compute_approximate_delta_table(
+        &mut replicate_matrix,
+        &replicates,
+        reference_scale,
+        &(0..bootstrap_scales.len()).collect::<Vec<_>>(),
+    );
     replicate_matrix
 }
 
