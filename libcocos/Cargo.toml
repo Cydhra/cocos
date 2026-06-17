@@ -2,6 +2,11 @@
 name = "libcocos"
 version = "0.1.0"
 edition = "2024"
+description = "Parallel implementation of the Approximately Unbiased test for independent likelihoods."
+repository = "https://github.com/Cydhra/cocos/"
+license = "MIT OR Apache-2.0"
+keywords = ["bio", "bioinformatics", "phylogenetics", "statistics", "bootstrap"]
+categories = ["science", "science::bioinformatics", "mathematics"]
 
 [dependencies]
 # bootstrapping
