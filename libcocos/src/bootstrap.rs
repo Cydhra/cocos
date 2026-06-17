@@ -48,8 +48,6 @@ pub const DEFAULT_REPLICATES: [usize; 10] = [
     10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000, 10_000,
 ];
 
-pub trait BootstrapReplicateTable {}
-
 /// A set of bootstrap replicates of a given scale
 pub struct SingleScaleBootstrap {
     replicates: Box<[f64]>,
@@ -89,12 +87,6 @@ impl SingleScaleBootstrap {
     pub fn all_replicates_mut(&mut self) -> impl Iterator<Item = &mut [f64]> {
         self.replicates.chunks_exact_mut(self.num_inputs)
     }
-}
-
-pub struct MultiScaleBootstrap {
-    replicates: Box<[SingleScaleBootstrap]>,
-    scales: Box<[f64]>,
-    replicate_counts: Box<[usize]>,
 }
 
 /// Generate a random vector of per-site weights, indicating how often each site of an alignment got
@@ -324,21 +316,22 @@ pub fn par_bootstrap<R: Rng + Clone + Send>(
 /// Convenience method to perform the multiscale bootstrap including calculation of the likelihood deltas.
 /// This method calls [`bootstrap`] and [`compute_delta_table`] once for each scale in
 /// `bootstrap_scales`, generating a number of replicates as indicated by the corresponding value in
-/// `bootstrap_replicates`. All results are stored in an instance of [`todo`], which is returned.
+/// `bootstrap_replicates`.
 ///
 /// # Parameters
 /// - `rng` the random number generator to use during the BP test
 /// - `likelihoods` a matrix of `N` input sequences of log-likelihoods that are being resampled
 ///   by the bootstrap resampling
-/// - `bootstrap_scales` the scaling factors of the multiscale bootstrap procedure.
+/// - `bootstrap_scales` the replicate scaling factors of the multiscale bootstrap procedure.
 /// - `replication_counts` how many replicates to generate for each corresponding scaling factor
 ///
 /// # Return
-/// The [`todo`] containing the bootstrap proportions of all input sequences for each scale
-/// individually.
+/// The [likelihood delta table] which contains the normalized bootstrap likelihoods. The type contains
+/// one table per replicate scale.
 ///
 /// [`bootstrap`]: bootstrap
 /// [`compute_delta_table`]: compute_delta_table
+/// [likelihood delta table]: ReplicateDeltas
 pub fn multiscale_bootstrap<R>(
     rng: &mut R,
     likelihoods: &SiteLikelihoodTable,
@@ -366,6 +359,23 @@ where
     replicate_matrix
 }
 
+/// Convenience method to perform the multiscale bootstrap including calculation of the likelihood deltas
+/// in parallel.
+/// More details in the [single-threaded function].
+///
+/// # Parameters
+/// - `rng` the random number generator to use during the BP test
+/// - `likelihoods` a matrix of `N` input sequences of log-likelihoods that are being resampled
+///   by the bootstrap resampling
+/// - `bootstrap_scales` the replicate scaling factors of the multiscale bootstrap procedure.
+/// - `replication_counts` how many replicates to generate for each corresponding scaling factor
+///
+/// # Return
+/// The [likelihood delta table] which contains the normalized bootstrap likelihoods. The type contains
+/// one table per replicate scale.
+///
+/// [single-threaded function]: multiscale_bootstrap
+/// [likelihood delta table]: ReplicateDeltas
 #[cfg(feature = "rayon")]
 pub fn par_multiscale_bootstrap<R>(
     rng: &R,
@@ -400,6 +410,29 @@ where
     replicate_matrix
 }
 
+/// Convenience method to perform the multiscale bootstrap including calculation of the likelihood deltas
+/// with the [rescaling approximation].
+/// This method performs [`bootstrap`] only once, and computes the multiscale [delta table]
+/// using rescaling as outlined in the [rescaling approximation].
+///
+/// # Parameters
+/// - `rng` the random number generator to use during the BP test
+/// - `likelihoods` a matrix of `N` input sequences of log-likelihoods that are being resampled
+///   by the bootstrap resampling
+/// - `bootstrap_scales` the replicate scaling factors of the multiscale bootstrap procedure. The
+///   scale indexed by `reference_scale` will be used for the bootstrap process, the likelihoods
+///   of the other scales will be approximated.
+/// - `reference_scale` which scale to use for bootstrapping
+/// - `replication_counts` how many replicates to generate for each corresponding scaling factor
+///
+/// # Return
+/// The [likelihood delta table] which contains the normalized bootstrap likelihoods.
+/// The type contains one table per replicate scale.
+///
+/// [delta table]: ReplicateDeltas
+/// [likelihood delta table]: ReplicateDeltas
+/// [rescaling approximation]: compute_approximate_delta_table
+/// [`bootstrap`]: bootstrap
 pub fn approx_multiscale_bootstrap<R>(
     rng: &mut R,
     likelihoods: &SiteLikelihoodTable,
@@ -431,6 +464,28 @@ where
     replicate_matrix
 }
 
+/// Convenience method to perform the multiscale bootstrap including calculation of the likelihood deltas
+/// with the [rescaling approximation] in parallel.
+///
+/// More details in the [single-threaded function].
+///
+/// # Parameters
+/// - `rng` the random number generator to use during the BP test
+/// - `likelihoods` a matrix of `N` input sequences of log-likelihoods that are being resampled
+///   by the bootstrap resampling
+/// - `bootstrap_scales` the replicate scaling factors of the multiscale bootstrap procedure. The
+///   scale indexed by `reference_scale` will be used for the bootstrap process, the likelihoods
+///   of the other scales will be approximated.
+/// - `reference_scale` which scale to use for bootstrapping
+/// - `replication_counts` how many replicates to generate for each corresponding scaling factor
+///
+/// # Return
+/// The [likelihood delta table] which contains the normalized bootstrap likelihoods.
+/// The type contains one table per replicate scale.
+///
+/// [single-threaded function]: approx_multiscale_bootstrap
+/// [rescaling approximation]: compute_approximate_delta_table
+/// [likelihood delta table]: ReplicateDeltas
 #[cfg(feature = "rayon")]
 pub fn par_approx_multiscale_bootstrap<R>(
     rng: &mut R,
